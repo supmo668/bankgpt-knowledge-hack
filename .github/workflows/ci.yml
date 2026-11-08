@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: unit tests + selftest eval (py3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Public repo: the kit's real snapshots must never be committed (redistribution forbidden).
+      - name: Guard — no snapshot data tracked
+        run: |
+          bad=$(git ls-files | grep -E '^(snapshots_zip/|snapshots/)|\.zip$' || true)
+          if [ -n "$bad" ]; then echo "::error::snapshot data is tracked:"; echo "$bad"; exit 1; fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install requirements
+        run: python -m pip install -r requirements.txt
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      # Synthetic data only (harness/selftest). Real snapshots are never present in CI.
+      - name: Selftest eval
+        run: |
+          python harness/run_eval.py --submission submission \
+            --snapshots harness/selftest/snapshots \
+            --eval harness/selftest/eval.jsonl \
+            --conflicts-gold harness/selftest/conflicts_gold.json \
+            --out results/selftest
+          python - <<'EOF'
+          import json, sys
+          r = json.load(open("results/selftest/report.json"))
+          s = r["final_score"]
+          print(f"selftest final_score={s}")
+          sys.exit(0 if s >= 1.0 else f"selftest final_score {s} < 1.0")
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest-report
+          path: results/selftest/
+          if-no-files-found: ignore
+
+  secret-scan:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
