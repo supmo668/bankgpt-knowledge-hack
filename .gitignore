@@ -1,0 +1,34 @@
+# ── AI-RDLC (airdlc) ──────────────────────────────────────────────────────
+# Per-principal sandbox is local AI working-state. Track ONLY the coordination
+# subset (dispatches / seeds / handoffs) via the git "ratchet". Order matters.
+.claude/usr/*
+!.claude/usr/*/
+.claude/usr/*/*
+!.claude/usr/*/*/
+.claude/usr/*/*/*
+!.claude/usr/*/*/dispatches/
+!.claude/usr/*/*/seeds/
+!.claude/usr/*/*/*handoff*.md
+.claude/usr/*/worktrees/
+/usr/
+# worktree checkouts (paths.worktree_base) — never commit the checkout
+worktrees/
+.worktrees/
+.claude/worktrees/
+# committed per-workstream context index IS tracked
+!.claude/workstreams/
+# local session/runtime state
+.aiadlc/
+.aiadlc-agent
+.claude/settings.local.json
+.claude/logs/
+
+# ── General ───────────────────────────────────────────────────────────────
+.DS_Store
+*.swp
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+node_modules/
