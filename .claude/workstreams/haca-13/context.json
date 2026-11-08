@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "workstream": "haca-13",
+  "updated_at": "2026-11-08T15:10:31.746981+00:00",
+  "linear": {
+    "initiative_url": "",
+    "initiative_id": ""
+  },
+  "paperclip": {
+    "parent": "",
+    "phases": {}
+  },
+  "github": {
+    "repo": ""
+  },
+  "phases": {
+    "P1": {
+      "status": "",
+      "artifact": "",
+      "linear": "",
+      "paperclip": "",
+      "gh": "",
+      "commit": "",
+      "qgr": "",
+      "summary": "",
+      "pr": "",
+      "updated_at": "",
+      "iterations": {
+        "1.1": {
+          "status": "done",
+          "commit": "70fd91b",
+          "qgr": "workstreams/haca-13/qgr/bankgpt-knowledge-hack-supmo668-worktree-agent-haca-13-bankgpt-knowledge-hack-qgr-iteration-complete-20261108-1509-776584c.md",
+          "summary": "R7 embed test, R8 branch-hours family, refusal diagnostics; public 0.7705 unchanged",
+          "updated_at": "2026-11-08T15:10:31.746958+00:00"
+        }
+      }
+    }
+  }
+}
