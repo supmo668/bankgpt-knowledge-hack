@@ -95,8 +95,14 @@ PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s?%")
 YEAR_RANGE_RE = re.compile(r"\b(20\d\d|19\d\d)\s?[-–]\s?(\d{2,4})\b")
 
 
+SCALE_RE = re.compile(r"\$\s?(\d+(?:\.\d+)?)\s*(million|mil|m|thousand|k)\b", re.I)
+
+
 def money_values(s: str) -> list[float]:
-    return [float(m.group(1).replace(",", "")) for m in MONEY_RE.finditer(s)]
+    """Dollar amounts in text: "$25,000" -> 25000.0, "$2 million" -> 2000000.0."""
+    scaled = [float(m.group(1)) * (1e6 if m.group(2).lower().startswith("m") else 1e3) for m in SCALE_RE.finditer(s)]
+    rest = SCALE_RE.sub(" ", s)
+    return scaled + [float(m.group(1).replace(",", "")) for m in MONEY_RE.finditer(rest)]
 
 
 def pct_values(s: str) -> list[str]:

@@ -9,7 +9,7 @@ from typing import Optional
 
 from .chunker import Chunk
 from .store import Store
-from .text import amount_range, expand_query, money_values, tokens, year_range
+from .text import amount_range, expand_query, money_values, stem, tokens, year_range
 
 REFUSAL_TEXT = "I don't know: that isn't listed on the website. Please contact us and a team member can help."
 
@@ -32,6 +32,9 @@ SUBJECT_SYN = {"car": "auto", "vehicle": "auto", "truck": "auto", "house": "home
                "college": "student", "school": "student", "mortgage": "home"}
 ADDRESS_RE = re.compile(r"\baddress\b|\bwhere is\b|\blocated\b", re.I)
 DESCRIPTIVE_RE = re.compile(r"^(what is|what's|what are|tell me about|describe|can i|do you|does dupaco|is there|how does)\b", re.I)
+NUMBER_Q_RE = re.compile(r"\b(routing|phone|telephone|fax|account|aba|nmls)\s*(number|no\.?|#)|\brouting\b", re.I)
+DATE_PHRASE_RE = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2},?\s+)?(19|20)\d\d\b|"
+                            r"\b(19|20)\d\d-\d\d-\d\d\b|\b(in|of|during|since)\s+(19|20)\d\d\b", re.I)
 PROCEDURE_RE = re.compile(r"\bhow (do|can|would) i\b|\bwhere (do|can) i\b|\bonline\b", re.I)
 COUNT_INTENT_RE = re.compile(r"\bhow many\b", re.I)
 LINK_INTENT_RE = re.compile(r"\b(link|url|website address|web address|web page|webpage)\b", re.I)
@@ -119,6 +122,21 @@ def _entities(q: str) -> list[str]:
     return out
 
 
+HEAD_NOUNS = [
+    (re.compile(r"\bmortgages?\b|\bhome loans?\b", re.I), re.compile(r"mortgage|home loan|conventional|purchase|refinanc", re.I)),
+    (re.compile(r"\bcertificates?\b|\bcds?\b", re.I), re.compile(r"certificate|\bcd\b|month", re.I)),
+    (re.compile(r"\bcredit cards?\b|\bvisa\b", re.I), re.compile(r"visa|card", re.I)),
+]
+
+
+def _heads_covered(q: str, hay: str) -> bool:
+    return all(body.search(hay) for ask, body in HEAD_NOUNS if ask.search(q))
+
+
+def _strip_dates(q: str) -> str:
+    return DATE_PHRASE_RE.sub(" ", q)
+
+
 def _subjects(q: str) -> list[str]:
     """The product a rate/fee question is about ('construction' in 'construction loan')."""
     out = []
@@ -166,7 +184,7 @@ class Answerer:
         q_money = [v for v in money_values(question) if v >= 50]
         q_year = None
         if re.search(r"\b(model|vehicle|car|auto|truck|motorcycle)\b", ql):
-            ys = [int(y) for y in MODEL_YEAR_RE.findall(question)]
+            ys = [int(y) for y in MODEL_YEAR_RE.findall(_strip_dates(question))]
             q_year = ys[0] if ys else None
         ents = _entities(question)
         address_q = bool(ADDRESS_RE.search(question))
@@ -223,6 +241,8 @@ class Answerer:
                 f *= 2.5 if re.search(rf"\b\d[\d,]*\+? (?:\w+ ){{0,2}}{re.escape(it.count_noun[:5])}", c.text, re.I) else 0.6
             if ents and any(e.lower() in c.text.lower() for e in ents):
                 f *= 1.4
+            if NUMBER_Q_RE.search(question):
+                f *= 2.0 if re.search(r"\d{7,}|\d{3}-\d{3}-\d{4}", c.text) else 0.7
             if c.text.endswith(("...", "…")):
                 f *= 0.4   # teaser card of another article
             if c.kind == "row":
@@ -269,6 +289,10 @@ class Answerer:
                 continue
             if (it.rate or it.fee) and subj and not all(_covers(hay, x) for x in subj):
                 continue
+            if it.rate and not self._tier_fits(question, c):
+                continue
+            if (it.rate or it.fee) and not _heads_covered(question, hay):
+                continue
             if it.fee and not it.rate and "$" not in c.text:
                 continue
             if it.hours and not TIME_RE.search(c.text):
@@ -277,6 +301,8 @@ class Answerer:
             break
         if best is None or best[0] < 3.0:
             return Result(REFUSAL_TEXT, confident=False)
+        if it.count_noun:
+            best = self._latest_statement(best, ranked, ents, it.count_noun)
         sc, cid = best
         text, used = self._compose(question, it, cid, sc, ranked, si)
         text = self._titled(text, cid)
@@ -285,6 +311,45 @@ class Answerer:
             if link and link not in text:
                 text = f"{text} You can do it online at {link}"
         return Result(text, sources=self._sources(used, ranked, si), confident=True, chunk_ids=used)
+
+    def _latest_statement(self, best, ranked, ents, noun: str):
+        """Counts ("how many branches") change over time: the most recently published statement wins."""
+        s = self.s
+        rx = re.compile(rf"\b\d[\d,]*\+?\s(?:[\w-]+\s){{0,2}}{re.escape(stem(noun)[:5])}", re.I)
+        pool = []
+        for sc, cid in ranked[:40]:
+            c = s.chunks[cid]
+            if sc < 0.4 * best[0] or not rx.search(c.text):
+                continue
+            hay = f"{c.ctx} {c.text}".lower()
+            if ents and not all(_covers(hay, e) for e in ents):
+                continue
+            info = s.pages[c.url]
+            live = info.kind in ("product", "home", "rate_sheet", "landing")
+            pool.append((info.pub_date or (date.max if live else date.min), sc, cid))
+        dated = [p for p in pool if p[0] not in (date.max, date.min)]
+        pool = dated or pool   # a dated statement beats undated copy on a live page (old bios, stale blurbs)
+        if not pool:
+            return best
+        _, sc, cid = max(pool, key=lambda t: (t[0], t[1]))
+        return (sc, cid)
+
+    def _tier_fits(self, question: str, c: Chunk) -> bool:
+        """A rate answer must match the term / amount the member named; otherwise the site doesn't say."""
+        ql = _strip_dates(question).lower()
+        body = f"{c.ctx} {c.text}".lower()
+        for pat, _ in QUALIFIERS:
+            if re.search(pat, ql) and not re.search(pat, body):
+                return False
+        for n, unit in TERM_RE.findall(ql):
+            if not re.search(rf"\b{n}[\s-]*{unit[0]}", body):
+                return False
+        amounts = [v for v in money_values(question) if v >= 50]
+        if amounts and c.kind == "row":
+            rng = amount_range(c.text)
+            if rng and not any(rng[0] <= v <= rng[1] for v in amounts):
+                return False
+        return True
 
     def _titled(self, text: str, cid: int) -> str:
         """Name the product the answer is about when the snippet itself doesn't (no numbers added)."""

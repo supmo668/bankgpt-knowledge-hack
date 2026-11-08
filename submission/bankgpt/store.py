@@ -37,7 +37,8 @@ def row_key(c: Chunk) -> Optional[str]:
     if not quals:
         return None
     q = " | ".join(quals).lower()
-    q = re.sub(r"[\s,]+", " ", q.replace("–", "-")).strip()
+    q = re.sub(r"(\d)[\s,](?=\d{3}\b)", r"\1", q.replace("–", "-"))
+    q = re.sub(r"\s*-\s*", "-", re.sub(r"[\s,]+", " ", q)).strip()
     if len(re.findall(r"[a-z]{3,}", q)) < 3:
         q = (c.ctx.split(" > ")[-1].lower() + " | " + q) if c.ctx else q
     scope = "business" if "business" in c.url.lower() else "personal"
@@ -63,7 +64,7 @@ def row_values(c: Chunk) -> tuple:
     """Value cells as (canonical column, numbers), so 6.000% == 6.00% and APR == Annual Percentage Rate."""
     vals = []
     for k, v in c.cells.items():
-        if "%" not in v or re.search(r"(?i)payment|min", k):
+        if "%" not in v or re.search(r"(?i)payment|min|points", k):
             continue
         nums = tuple(round(float(x.replace(",", "")), 4) for x in NUM_RE.findall(v))
         if nums:
