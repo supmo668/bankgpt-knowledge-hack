@@ -20,8 +20,19 @@ TIME_RE = re.compile(r"\b\d{1,2}(:\d\d)?\s?(a\.?m\.?|p\.?m\.?)|\bnoon\b", re.I)
 LIST_INTENT_RE = re.compile(r"\b(what|which) (\w+ ){0,3}(do|does) (you|dupaco) (offer|have)\b|\blist\b|\ball (of )?(the|your)\b|"
                             r"\b(rates|aprs|apys) (for|on) (the|your)\b|\bwhat are (the|your|their) (\w+ ){0,3}(rates|aprs|apys)\b|"
                             r"\b(\w+ )?(rates|aprs|apys)\b.*\b(right now|today)\b|\bprovide (\w+ ){0,3}rates\b", re.I)
-HAS_RATE_RE = re.compile(r"\d+(?:\.\d+)?\s?%\s*(?:apr|apy|annual|fixed|variable|rate|dividend)|"
-                         r"(?:rate|apr|apy|yield|dividend)\w*[^.;]{0,40}?\d+(?:\.\d+)?\s?%", re.I)
+HAS_RATE_RE = re.compile(r"\d+(?:\.\d+)?\s?%\s*(?:\(?apr\)?|\(?apy\)?|annual percentage|fixed rate|variable rate|dividend)|"
+                         r"(?:rates?|apr|apy|yield)\s*(?:of|is|at|:|=|as low as|from)?\s*\d+(?:\.\d+)?\s?%", re.I)
+CTA_RE = re.compile(r"^(for more information|to learn more|learn more|click|visit|download|get started|apply|see details|"
+                    r"open my|call to|keep reading|read more)\b", re.I)
+SUBJECT_RE = re.compile(r"\b([a-z][a-z$/-]+)\s+(loans?|mortgages?|accounts?|cards?|certificates?|cds?|lines? of credit|savings|checking|ira)\b", re.I)
+SUBJECT_SKIP = {"a", "an", "the", "my", "your", "our", "this", "that", "for", "on", "of", "any", "new", "used", "fixed",
+                "special", "month", "year", "rate", "current", "standard", "regular", "dupaco", "dupaco's", "per", "what",
+                "which", "is", "are", "do", "does", "share", "credit", "debit", "loan", "money", "term", "jumbo"}
+SUBJECT_SYN = {"car": "auto", "vehicle": "auto", "truck": "auto", "house": "home", "boat": "boat", "rv": "rv",
+               "college": "student", "school": "student", "mortgage": "home"}
+ADDRESS_RE = re.compile(r"\baddress\b|\bwhere is\b|\blocated\b", re.I)
+DESCRIPTIVE_RE = re.compile(r"^(what is|what's|what are|tell me about|describe|can i|do you|does dupaco|is there|how does)\b", re.I)
+PROCEDURE_RE = re.compile(r"\bhow (do|can|would) i\b|\bwhere (do|can) i\b|\bonline\b", re.I)
 COUNT_INTENT_RE = re.compile(r"\bhow many\b", re.I)
 LINK_INTENT_RE = re.compile(r"\b(link|url|website address|web address|web page|webpage)\b", re.I)
 SUPER_HI_RE = re.compile(r"\b(highest|best|top|maximum|max|most)\b", re.I)
@@ -108,6 +119,17 @@ def _entities(q: str) -> list[str]:
     return out
 
 
+def _subjects(q: str) -> list[str]:
+    """The product a rate/fee question is about ('construction' in 'construction loan')."""
+    out = []
+    for m in SUBJECT_RE.finditer(q):
+        w = m.group(1).lower()
+        if w in SUBJECT_SKIP or re.search(r"\d", w):
+            continue
+        out.append(SUBJECT_SYN.get(w, w))
+    return out
+
+
 def _covers(hay: str, ent: str) -> bool:
     e = ent.lower()
     if e in hay:
@@ -147,6 +169,7 @@ class Answerer:
             ys = [int(y) for y in MODEL_YEAR_RE.findall(question)]
             q_year = ys[0] if ys else None
         ents = _entities(question)
+        address_q = bool(ADDRESS_RE.search(question))
         top = sorted(raw.items(), key=lambda kv: -kv[1])[:500]
         out = []
         shadow = s.shadowed.get(si, set())
@@ -158,10 +181,22 @@ class Answerer:
             f = info.authority ** 0.8 * (0.8 + 0.4 * s.recency(info, ref))
             body = f"{c.ctx} {c.text}".lower()
             head = (c.text.split(":")[0] if c.kind == "row" else c.text).lower()
-            # page-title match: the page is *about* what was asked
+            # page-title / heading match: the page or section is *about* what was asked
             tt = set(tokens(info.title))
             if tt and qset:
                 f *= 1 + 0.6 * len(tt & qset) / max(1, min(len(qset), len(tt)))
+            ct = set(tokens(c.ctx))
+            if ct and qset:
+                f *= 1 + 0.4 * len(ct & qset) / max(1, len(qset))
+            if c.kind in ("para", "sent"):
+                nw = len(c.text.split())
+                f *= 0.5 + 0.5 * min(1.0, nw / 10)
+                if CTA_RE.match(c.text):
+                    f *= 0.6
+            if ents and any(e.lower() in info.title.lower() for e in ents):
+                f *= 1.3
+            if address_q and re.search(r"\b(location|branch)", c.ctx, re.I):
+                f *= 1.5
             for n, unit in terms:
                 if re.search(rf"\b{n}[\s-]*{unit}", head if c.kind == "row" else body):
                     f *= 1.6
@@ -219,6 +254,7 @@ class Answerer:
         if it.link:
             return self._link_answer(question, ranked, si)
         ents = _entities(question)
+        subj = _subjects(question)
         top_score = ranked[0][0]
         best = None
         for sc, cid in ranked[:50]:
@@ -231,6 +267,8 @@ class Answerer:
                 continue
             if it.rate and not (_row_has_rate(c) and info.kind in ("rate_sheet", "product", "landing", "home")):
                 continue
+            if (it.rate or it.fee) and subj and not all(_covers(hay, x) for x in subj):
+                continue
             if it.fee and not it.rate and "$" not in c.text:
                 continue
             if it.hours and not TIME_RE.search(c.text):
@@ -241,7 +279,44 @@ class Answerer:
             return Result(REFUSAL_TEXT, confident=False)
         sc, cid = best
         text, used = self._compose(question, it, cid, sc, ranked, si)
+        text = self._titled(text, cid)
+        if PROCEDURE_RE.search(question):
+            link = self._action_link(question, cid, si)
+            if link and link not in text:
+                text = f"{text} You can do it online at {link}"
         return Result(text, sources=self._sources(used, ranked, si), confident=True, chunk_ids=used)
+
+    def _titled(self, text: str, cid: int) -> str:
+        """Name the product the answer is about when the snippet itself doesn't (no numbers added)."""
+        c = self.s.chunks[cid]
+        info = self.s.pages[c.url]
+        if c.kind in ("row",) or info.kind not in ("product", "landing"):
+            return text
+        title = re.split(r"\s[|–-]\s", info.title)[0].strip()
+        if not title or re.search(r"\d", title) or len(title) > 60:
+            return text
+        if set(tokens(title)) <= set(tokens(text)):
+            return text
+        return f"{title}: {text}"
+
+    def _action_link(self, question: str, cid: int, si: int) -> Optional[str]:
+        """'How do I join online?' -> the call-to-action link on the answering page that fits the question."""
+        s = self.s
+        url = s.chunks[cid].url
+        q = set(tokens(expand_query(question)))
+        best, best_sc = None, 0.0
+        for ocid in s.page_chunks(url, si):
+            oc = s.chunks[ocid]
+            for link in oc.links:
+                if not link.startswith("http") or "dupaco.com" not in link or link.rstrip("/") == url.rstrip("/"):
+                    continue
+                if "#" in link or "privacy" in link:
+                    continue
+                host_sub = not link.split("/")[2].startswith("www.")
+                sc = len(q & set(tokens(oc.text + " " + link.replace("/", " ").replace(".", " ")))) + (1.5 if host_sub else 0)
+                if sc > best_sc:
+                    best, best_sc = link, sc
+        return best if best_sc >= 2 else None
 
     def _compose(self, question: str, it: Intent, cid: int, sc: float, ranked, si: int):
         s = self.s
@@ -281,18 +356,36 @@ class Answerer:
         if c.kind == "group" and it.hours:
             # several schedules on file (branches differ): give the two most relevant distinct ones
             groups = [cid]
-            for osc, ocid in ranked[:20]:
+            label = c.text.split(":")[0]
+            seen_sched = {re.sub(r"\W", "", c.text.lower())}
+            for osc, ocid in ranked[:30]:
                 oc = s.chunks[ocid]
-                if ocid != cid and oc.kind == "group" and TIME_RE.search(oc.text) and osc >= 0.5 * sc \
-                        and oc.text.split(":")[0] == c.text.split(":")[0]:
+                key = re.sub(r"\W", "", oc.text.lower())
+                if ocid != cid and oc.kind == "group" and TIME_RE.search(oc.text) and osc >= 0.4 * sc \
+                        and oc.text.split(":")[0] == label and key not in seen_sched:
                     groups.append(ocid)
+                    seen_sched.add(key)
+                if len(groups) >= 3:
                     break
             return " Schedules vary by branch. ".join(s.chunks[g].text for g in groups) if len(groups) > 1 \
                 else c.text, groups
         txt = c.text
         if len(txt) > 360:
             txt = self._best_sentences(question, txt)
-        return txt, [cid]
+        used = [cid]
+        if DESCRIPTIVE_RE.search(question.strip()) and not (it.rate or it.fee or it.count_noun or it.hours):
+            # a descriptive question: add the next-best passage from the same page
+            for osc, ocid in ranked[:15]:
+                oc = s.chunks[ocid]
+                if ocid == cid or oc.url != c.url or osc < 0.75 * sc or oc.kind not in ("para", "sent"):
+                    continue
+                if oc.text in txt or txt in oc.text or CTA_RE.match(oc.text):
+                    continue
+                extra = oc.text if len(oc.text) <= 360 else self._best_sentences(question, oc.text)
+                txt = f"{txt} {extra}"
+                used.append(ocid)
+                break
+        return txt, used
 
     def _render_rows(self, rids: list[int]) -> str:
         s = self.s
@@ -331,6 +424,13 @@ class Answerer:
         for cid in used:
             for d in self.dups.get(cid, []):
                 add(d)
+        keyvals = set(re.findall(r"\d+(?:\.\d+)?%|\b\d{6,}\b", " ".join(s.chunks[u].text for u in used)))
+        if keyvals:
+            for sc, cid in ranked[:40]:
+                c = s.chunks[cid]
+                if s.pages[c.url].kind in ("rate_sheet", "product", "landing", "home") and \
+                        keyvals & set(re.findall(r"\d+(?:\.\d+)?%|\b\d{6,}\b", c.text)):
+                    add(cid)
         return out
 
     def _link_answer(self, question: str, ranked, si: int) -> Result:

@@ -93,6 +93,7 @@ class Store:
         self.page_hash: dict[tuple[str, int], int] = {}      # (url, snap) -> content hash
         self.postings: dict[str, list[int]] = defaultdict(list)
         self.table_rows: dict[str, list[int]] = defaultdict(list)
+        self.url_chunks: dict[str, list[int]] = defaultdict(list)
         self._idf: dict[str, float] = {}
         self.shadowed: dict[int, set] = {}                   # snapshot -> row chunks that lost their fact
         self.fact_groups: dict[int, dict] = {}               # snapshot -> fact key -> [cid]
@@ -126,6 +127,7 @@ class Store:
                         self.postings[t].append(cid)
                     if c.table:
                         self.table_rows[c.table].append(cid)
+                    self.url_chunks[c.url].append(cid)
                 self.chunk_mask[cid] |= bit
         self._resolve_facts(si)
         self._finalize()
@@ -191,6 +193,10 @@ class Store:
                 dl = self.chunk_len[cid]
                 scores[cid] += idf * f * (K1 + 1) / (f + K1 * (1 - B + B * dl / self._avglen))
         return scores
+
+    def page_chunks(self, url: str, si: int) -> list[int]:
+        bit = 1 << si
+        return [cid for cid in self.url_chunks.get(url, []) if self.chunk_mask[cid] & bit]
 
     def rows_of(self, table: str, si: int) -> list[int]:
         bit = 1 << si
