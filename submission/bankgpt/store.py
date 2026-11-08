@@ -382,16 +382,17 @@ class Store:
         latest = self.views[self.snapshot_for(None)].snap if self.snapshots else -1
         return [v for v, vw in enumerate(self.views) if not vw.trailing or vw.snap == latest]
 
-    def claim(self, cid: int, si: int) -> tuple:
-        """How strongly a row claims to be current in view `si`: offer live, effective date, page present,
-        authority, publication date, then recency."""
+    def claim(self, cid: int, si: int, effective: Optional[str] = None) -> tuple:
+        """How strongly a row (or a paragraph, with the date its sentence states) claims to be current in view
+        `si`: offer live, effective date, page present, authority, publication date, then recency."""
         c = self.chunks[cid]
         info = self.pages[c.url]
         present = self.present(c.url, si)
         live = not (c.ends and c.ends < self.view_date(si))
         mask = self.chunk_mask[cid]
         first_seen = (mask & -mask).bit_length()      # snapshot this exact value first appeared in
-        return (live, _eff_date(c.effective), present, info.authority, info.pub_date or date.max, first_seen, cid)
+        return (live, _eff_date(effective or c.effective), present, info.authority, info.pub_date or date.max,
+                first_seen, cid)
 
     def why_wins(self, win: int, lose: int, si: int) -> str:
         """The currency rule that decided between two rows of one fact, in words."""

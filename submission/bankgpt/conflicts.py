@@ -16,7 +16,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
-from .store import Store, hours_key_parts, row_values, values_disagree
+from .store import Store, _eff_date, hours_key_parts, row_values, values_disagree
+from .textfacts import TextFacts
 
 RATE_PAGE_KINDS = ("rate_sheet", "product", "landing", "calculator", "document", "home")
 ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"]
@@ -57,6 +58,14 @@ def _mirror_key(label: str) -> str:
                                                     "certificate", "certificates", "account"))
 
 
+def _eff_mdy(s: Optional[str]) -> Optional[str]:
+    """'8/24/26' -> '08/24/2026' (the form table effective dates use), else None."""
+    if not s:
+        return None
+    d = _eff_date(s)
+    return d.strftime("%m/%d/%Y") if d != date.min else None
+
+
 def _path(url: str) -> str:
     return re.sub(r"^https?://(www\.)?dupaco\.com", "", url) or "/"
 
@@ -68,7 +77,8 @@ class ConflictFinder:
     def compute(self) -> list[ConflictRec]:
         if not self.s.snapshots:
             return []
-        out = self._table_conflicts() + self._count_conflicts() + self._ordinal_conflicts()
+        out = (self._table_conflicts() + self._paragraph_conflicts() + self._count_conflicts()
+               + self._ordinal_conflicts())
         out.sort(key=lambda c: (-c.priority, c.topic))
         # the same rate change mirrored on sibling products (business / IRA copies of a certificate special)
         # is one contradiction, not several
@@ -144,6 +154,69 @@ class ConflictFinder:
             values = [_fmt_values(v) for v, _, _ in losers] + [_fmt_values(wv)]
             out.append(ConflictRec(topic=topic, values=values, sources=sources, resolution=_fmt_values(wv),
                                    reason=reason, priority=2 if same_snap_stale else 1, fact=_mirror_key(label)))
+        return out
+
+    # ------------------------------------------------------------------ paragraph vs table
+    def _paragraph_conflicts(self) -> list[ConflictRec]:
+        """A paragraph whose rate / APY / APR resolves to a table fact but matches no tier of it, in the same
+        crawl: one entry per statement and fact (its APY and dividend rate together). Resolved by the currency
+        rules (the sentence's stated "as of" date counts as its effective date); a paragraph the newest crawl no
+        longer shows has lost to the table's current value."""
+        s = self.s
+        tf = TextFacts(s)
+        latest = s.snapshot_for(None)
+        latest_bit = 1 << s.views[latest].snap
+        current = s.winners.get(latest, {})
+        groups: dict[tuple, list] = defaultdict(list)
+        for si in s.crawl_views():
+            for cl, keys, tv in tf.disagreements(si):
+                if not any(k in current for k in keys):
+                    continue   # the fact is gone from the site: history, not an open contradiction
+                groups[(tuple(keys), re.sub(r"\W+", " ", cl.sentence.lower()))].append((si, cl, tv))
+        out = []
+        for (keys, _), occ in groups.items():
+            si = max(o[0] for o in occ)
+            occ = [o for o in occ if o[0] == si]
+            cl0 = occ[0][1]
+            pc = s.chunks[cl0.cid]
+            tkey = next(k for k in keys if k in occ[0][2])
+            trow = s.winners[si][tkey]
+            tc = s.chunks[trow]
+            claim_vals = tuple(sorted({(cl.col, cl.value) for _, cl, _ in occ}))
+            table_vals = tuple(sorted({(cl.col, v) for _, cl, tv in occ for v in tv.values()}))
+            live_para = any(s.chunk_mask[cl.cid] & latest_bit for _, cl, _ in occ)
+            pclaim = s.claim(cl0.cid, si, _eff_mdy(cl0.effective))
+            para_wins = live_para and si == latest and pclaim > s.claim(trow, si)
+            claim_txt = _fmt_values(claim_vals)
+            table_txt = " | ".join(dict.fromkeys(_fmt_values(((c, v),)) for c, v in table_vals))
+            if para_wins:
+                res = claim_txt
+                why = (f"{_path(pc.url)} ({s.pages[pc.url].kind}) states {claim_txt}"
+                       + (f" as of {cl0.effective}" if cl0.effective else "")
+                       + f" and outranks the {_path(tc.url)} table on the currency rules")
+            else:
+                cols = {c for c, _ in claim_vals}
+                cur_vals = sorted({(c, v) for k in keys if k in current
+                                   for c, v in row_values(s.chunks[current[k]]) if c in cols})
+                res = " | ".join(dict.fromkeys(_fmt_values(((c, v),)) for c, v in cur_vals)) or table_txt
+                lost = ("is no longer on the site" if not live_para else
+                        f"loses to the {_path(tc.url)} table ({s.pages[tc.url].kind}, effective "
+                        f"{tc.effective or 'undated'})")
+                pub = s.pages[pc.url].pub_date
+                why = (f"paragraph on {_path(pc.url)} ({s.pages[pc.url].kind}"
+                       + (f", published {pub.isoformat()}" if pub else "")
+                       + f") says {claim_txt} in {s.view_sid(si)}; it {lost}; current table value {res}")
+            product = tc.ctx.split(" > ")[-1] if tc.ctx else ""
+            label = ", ".join(dict.fromkeys(v for k, v in tc.cells.items()
+                                            if "%" not in v and not re.search(r"(?i)^min|payment|points", k)))
+            if len(keys) > 1:   # a claim naming no tier: every tier of the product
+                label = re.sub(r"\s*\d{4}-\d{2,4} Model Year,?\s*|\$[\d,.]+\s*[-–+][^,]*,?\s*", " ", label).strip(" ,")
+            topic = f"{product}: {label} (paragraph vs table)".replace(": :", ":").strip(": ")
+            values = [claim_txt, table_txt] if claim_txt != res else [table_txt, claim_txt]
+            out.append(ConflictRec(
+                topic=topic, values=values, resolution=res, reason=why, priority=2,
+                sources=[(pc.url, s.view_sid(si), cl0.sentence[:200]), (tc.url, s.view_sid(si), tc.text[:200])],
+                fact=f"para:{'|'.join(keys)}:{claim_txt}"))
         return out
 
     # ------------------------------------------------------------------ text facts
