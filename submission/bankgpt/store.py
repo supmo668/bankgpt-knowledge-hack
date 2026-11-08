@@ -113,7 +113,6 @@ class Store:
         self.key2id: dict[tuple, int] = {}
         self.pages: dict[str, PageInfo] = {}                 # url -> latest PageInfo
         self.page_snaps: dict[str, int] = defaultdict(int)   # url -> snapshot mask
-        self.page_hash: dict[tuple[str, int], int] = {}      # (url, snap) -> content hash
         self.postings: dict[str, list[int]] = defaultdict(list)
         self.table_rows: dict[str, list[int]] = defaultdict(list)
         self.url_chunks: dict[str, list[int]] = defaultdict(list)
@@ -131,7 +130,6 @@ class Store:
             info = page_info(p.url, p.title, p.markdown, p.fetched_at)
             self.pages[p.url] = info
             self.page_snaps[p.url] |= bit
-            self.page_hash[(p.url, si)] = hash(p.markdown)
             for c in chunk_page(p.url, info.title, p.markdown):
                 # per-crawl attributes are part of the identity: an unchanged row whose table's effective
                 # date moved (or whose model-year rank / table changed) is a new version, not the old one
@@ -171,7 +169,9 @@ class Store:
         info = self.pages[c.url]
         present = bool(self.page_snaps[c.url] >> si & 1)
         live = not (c.ends and c.ends < self.snapshots[si][1])
-        return (live, _eff_date(c.effective), present, info.authority, info.pub_date or date.max, -cid)
+        mask = self.chunk_mask[cid]
+        first_seen = (mask & -mask).bit_length()      # snapshot this exact value first appeared in
+        return (live, _eff_date(c.effective), present, info.authority, info.pub_date or date.max, first_seen, cid)
 
     def present(self, url: str, si: int) -> bool:
         return bool(self.page_snaps.get(url, 0) >> si & 1)
