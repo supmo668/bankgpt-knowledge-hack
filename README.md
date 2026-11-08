@@ -1,3 +1,19 @@
+# bank-gpt: Knowledge Hackathon submission
+
+> **Our solution:** `submission/` (`solution.py` + `bankgpt/`). Approach, currency rules and keys
+> (none) are in [NOTES.md](NOTES.md), and scores in [docs/eval/RESULTS.md](docs/eval/RESULTS.md).
+> The snapshot data is **not** in this repo: copy the kit's five zips into `snapshots_zip/` (see NOTES.md), then
+>
+> ```bash
+> python harness/run_eval.py --submission submission --eval eval/public_eval.jsonl   # public: 0.7705 (starter 0.093)
+> python -m unittest discover -s tests                                               # currency-rule tests
+> python demo/app.py                                                                 # local demo UI
+> ```
+>
+> Everything below is the organisers' kit README, unchanged.
+
+---
+
 # Hackathon: Build a Knowledge System That Knows What's True *Now*
 
 ## The problem in one minute
