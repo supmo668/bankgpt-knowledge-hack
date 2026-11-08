@@ -147,8 +147,11 @@ function colWidths(t, cols) {
 
 function drawImage(t, y, maxH) {
   const href = t.tokens[0].href;
+  // Only figures/*.svg may be embedded: a stray `![](../../x)` must not pull an arbitrary local file into the PDF.
+  const file = path.resolve(DECK_DIR, href);
+  if (path.dirname(file) !== FIG_DIR || !file.endsWith('.svg')) throw new Error(`image outside figures/*.svg: ${href}`);
   // Drop the root's fixed width/height so svg-to-pdfkit scales the viewBox into the box it is given.
-  const svg = fs.readFileSync(path.join(DECK_DIR, href), 'utf8')
+  const svg = fs.readFileSync(file, 'utf8')
     .replace(/<svg([^>]*?) width="[\d.]+" height="[\d.]+"/, '<svg$1');
   const vb = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
   const [vw, vh] = vb ? [Number(vb[1]), Number(vb[2])] : [960, 540];
