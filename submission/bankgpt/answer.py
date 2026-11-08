@@ -136,6 +136,14 @@ def _heads_covered(q: str, hay: str) -> bool:
     return all(body.search(hay) for ask, body in HEAD_NOUNS if ask.search(q))
 
 
+def _model_year(question: str) -> Optional[int]:
+    """The vehicle model year a question names (not a date like 'August 2026')."""
+    if not re.search(r"\b(model|vehicle|car|auto|truck|motorcycle)\b", question, re.I):
+        return None
+    ys = [int(y) for y in MODEL_YEAR_RE.findall(_strip_dates(question))]
+    return ys[0] if ys else None
+
+
 def _strip_dates(q: str) -> str:
     return DATE_PHRASE_RE.sub(" ", q)
 
@@ -186,9 +194,7 @@ class Answerer:
         terms = [(int(n), u[0]) for n, u in TERM_RE.findall(ql)]
         q_money = [v for v in money_values(question) if v >= 50]
         q_year = None
-        if re.search(r"\b(model|vehicle|car|auto|truck|motorcycle)\b", ql):
-            ys = [int(y) for y in MODEL_YEAR_RE.findall(_strip_dates(question))]
-            q_year = ys[0] if ys else None
+        q_year = _model_year(question)
         ents = _entities(question)
         address_q = bool(ADDRESS_RE.search(question))
         top = sorted(raw.items(), key=lambda kv: -kv[1])[:500]
@@ -390,6 +396,11 @@ class Answerer:
                 return False
         for n, unit in TERM_RE.findall(ql):
             if not any(re.search(p, body) for p in term_patterns(int(n), unit[0])):
+                return False
+        yq = _model_year(question)
+        if yq is not None and c.kind == "row":
+            yr = year_range(c.text)
+            if yr and not yr[0] <= yq <= yr[1]:
                 return False
         amounts = [v for v in money_values(question) if v >= 50]
         if amounts and c.kind == "row":
