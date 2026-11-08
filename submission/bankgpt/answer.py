@@ -344,13 +344,12 @@ class Answerer:
             losers = [x for x in groups[k] if x in shadow]
             if not losers:
                 continue
-            lose_pages = sorted({s.chunks[x].url.replace("https://www.dupaco.com", "") or "/" for x in losers})[:3]
             label = c.text.split(':')[0]
             if any(n.startswith(label + ":") for n in notes):
                 continue
-            notes.append(f"{label}: other pages ({', '.join(lose_pages)}) show an older value; "
-                         f"used {c.url.replace('https://www.dupaco.com', '') or '/'} "
-                         f"(effective {c.effective or 'undated'}), the newest authoritative source.")
+            reasons = "; ".join(dict.fromkeys(s.why_wins(cid, x, si) for x in losers[:3]))
+            notes.append(f"{label}: other pages show a different value; used "
+                         f"{c.url.replace('https://www.dupaco.com', '') or '/'} because of {reasons}.")
             if len(notes) >= 2:
                 break
         return " ".join(notes) or None

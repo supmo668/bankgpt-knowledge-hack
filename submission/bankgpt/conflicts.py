@@ -129,12 +129,12 @@ class ConflictFinder:
             for v, si, cid in losers:
                 lc = s.chunks[cid]
                 if si == last_si:
-                    reasons.append(f"{_path(lc.url)} still shows {_fmt_values(v)} (effective {lc.effective or 'undated'}, "
-                                   f"{s.pages[lc.url].kind} page) - stale copy")
+                    reasons.append(f"{_path(lc.url)} shows {_fmt_values(v)} - loses on {s.why_wins(win, cid, si)}")
                 else:
-                    reasons.append(f"{_fmt_values(v)} was on {_path(lc.url)} in {s.snapshots[si][0]} and was superseded")
-            reason = (f"{_path(wc.url)} ({s.pages[wc.url].kind}, effective {wc.effective or 'undated'}) in "
-                      f"{s.snapshots[last_si][0]} is authoritative and newest; " + "; ".join(reasons))
+                    reasons.append(f"{_fmt_values(v)} was on {_path(lc.url)} in {s.snapshots[si][0]} and was "
+                                   f"superseded by a later crawl")
+            reason = (f"current value from {_path(wc.url)} ({s.pages[wc.url].kind}, effective "
+                      f"{wc.effective or 'undated'}) in {s.snapshots[last_si][0]}; " + "; ".join(reasons))
             values = [_fmt_values(v) for v, _, _ in losers] + [_fmt_values(wv)]
             out.append(ConflictRec(topic=topic, values=values, sources=sources, resolution=_fmt_values(wv),
                                    reason=reason, priority=2 if same_snap_stale else 1, fact=_mirror_key(label)))
@@ -180,7 +180,7 @@ class ConflictFinder:
             topic="Number of Dupaco branches (branch office locations count)", values=values, sources=sources,
             resolution=f"{newest[1]} branches",
             reason=f"most recent statement ({_path(s.chunks[newest[3]].url)}, published {newest[0].isoformat()}) "
-                   f"says {newest[1]}; older press releases still say {olds} (e.g. before the Hy-Vee branch closed)",
+                   f"says {newest[1]}; older press releases still say {olds}",
             priority=2)]
 
     def _ordinal_conflicts(self) -> list[ConflictRec]:

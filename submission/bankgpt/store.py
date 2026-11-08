@@ -101,6 +101,10 @@ def values_disagree(a: tuple, b: tuple) -> bool:
     return any(da[k] != db[k] for k in shared)
 
 
+def _short_path(url: str) -> str:
+    return re.sub(r"^https?://[^/]+", "", url) or "/"
+
+
 class Store:
     def __init__(self) -> None:
         self.snapshots: list[tuple[str, str]] = []          # (snapshot_id, taken_on), ingest order
@@ -172,6 +176,24 @@ class Store:
         mask = self.chunk_mask[cid]
         first_seen = (mask & -mask).bit_length()      # snapshot this exact value first appeared in
         return (live, _eff_date(c.effective), present, info.authority, info.pub_date or date.max, first_seen, cid)
+
+    def why_wins(self, win: int, lose: int, si: int) -> str:
+        """The currency rule that decided between two rows of one fact, in words."""
+        a, b = self.claim(win, si), self.claim(lose, si)
+        wc, lc = self.chunks[win], self.chunks[lose]
+        if a[0] != b[0]:
+            return f"the offer on {_short_path(lc.url)} has ended"
+        if a[1] != b[1]:
+            return (f"newer effective date ({wc.effective or 'undated'} vs {lc.effective or 'undated'} "
+                    f"on {_short_path(lc.url)})")
+        if a[2] != b[2]:
+            return f"{_short_path(lc.url)} is missing from this crawl (carried forward)"
+        if a[3] != b[3]:
+            return (f"higher-authority source ({self.pages[wc.url].kind} vs {self.pages[lc.url].kind} "
+                    f"{_short_path(lc.url)})")
+        if a[4] != b[4]:
+            return f"more recently published than {_short_path(lc.url)}"
+        return f"the newer value (first seen in a later crawl than {_short_path(lc.url)})"
 
     def present(self, url: str, si: int) -> bool:
         return bool(self.page_snaps.get(url, 0) >> si & 1)
