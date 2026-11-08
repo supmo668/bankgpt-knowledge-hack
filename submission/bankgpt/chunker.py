@@ -214,6 +214,7 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
                 pending_table.append(c)
                 chunks.append(c)
             _alias_year_tiers(pending_table)
+            prev_short = False   # the next short line captions the next table; it is not a section
             continue
         if s.startswith("|") and s.count("|") >= 3 and not (i + 1 < n and re.match(r"^\s*\|?\s*:?-{3,}", lines[i + 1])):
             # a pipe table with no header separator (PDF fee schedules): label | value rows,
@@ -238,6 +239,7 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
                 txt = f"{cells[0]}: {', '.join(cells[1:])}"
                 ctx = " > ".join(x for x in (head_ctx(), section, caption, sub) if x)
                 chunks.append(Chunk(url, txt, ctx, "row", table=tkey, cells=pairs))
+            prev_short = False
             continue
         if not s:
             flush_para()
