@@ -22,7 +22,13 @@ the same run with our own conflicts gold included (all four pillars, the shape o
 | `bf6cdd4` | carry-forward views, label:value facts, expired offers, scale-free refusal | 0.771 | 0.754 |
 | `bbf1e65` | conflict notes, one value per fact on term questions | **0.771** | **0.754** |
 
-The run on Python 3.11.10 (clean interpreter, no packages) gives the same 0.7705.
+The run on Python 3.11.10 (clean interpreter, no packages) gives the same 0.7705, and so does a fresh clone
+with only the five kit zips dropped into `snapshots_zip/`.
+
+After the iteration-1 quality gate (`fix:` commits citing findings C-1 … C-24) the public score is unchanged
+(0.7705, 0 stale-trap hits). Those fixes harden cases the public set doesn't exercise: per-crawl effective dates,
+new model-year tiers, tables inserted above others, ties going to the newest value, model years outside every
+tier, and conflict dedupe. 37 unit tests pass.
 
 ## Per-category scores at `bbf1e65` (public)
 
