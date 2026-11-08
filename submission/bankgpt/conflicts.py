@@ -73,6 +73,7 @@ def _path(url: str) -> str:
 class ConflictFinder:
     def __init__(self, store: Store) -> None:
         self.s = store
+        self.text_facts = TextFacts(store)   # its caches outlive one ingest: earlier views never change
 
     def compute(self) -> list[ConflictRec]:
         if not self.s.snapshots:
@@ -163,7 +164,7 @@ class ConflictFinder:
         rules (the sentence's stated "as of" date counts as its effective date); a paragraph the newest crawl no
         longer shows has lost to the table's current value."""
         s = self.s
-        tf = TextFacts(s)
+        tf = self.text_facts
         latest = s.snapshot_for(None)
         latest_bit = 1 << s.views[latest].snap
         current = s.winners.get(latest, {})
@@ -183,7 +184,7 @@ class ConflictFinder:
             trow = s.winners[si][tkey]
             tc = s.chunks[trow]
             claim_vals = tuple(sorted({(cl.col, cl.value) for _, cl, _ in occ}))
-            table_vals = tuple(sorted({(cl.col, v) for _, cl, tv in occ for v in tv.values()}))
+            table_vals = tuple(sorted({(cl.col, v) for _, cl, tv in occ for vs in tv.values() for v in vs}))
             live_para = any(s.chunk_mask[cl.cid] & latest_bit for _, cl, _ in occ)
             pclaim = s.claim(cl0.cid, si, _eff_mdy(cl0.effective))
             para_wins = live_para and si == latest and pclaim > s.claim(trow, si)
@@ -210,7 +211,8 @@ class ConflictFinder:
             label = ", ".join(dict.fromkeys(v for k, v in tc.cells.items()
                                             if "%" not in v and not re.search(r"(?i)^min|payment|points", k)))
             if len(keys) > 1:   # a claim naming no tier: every tier of the product
-                label = re.sub(r"\s*\d{4}-\d{2,4} Model Year,?\s*|\$[\d,.]+\s*[-–+][^,]*,?\s*", " ", label).strip(" ,")
+                label = re.sub(r"\s*\d{4}-\d{2,4} Model Year,?\s*|\$[\d,.]+\s*(?:[-–]\s*\$?[\d,.]+|\+)\s*,?\s*", " ",
+                               label).strip(" ,")
             topic = f"{product}: {label} (paragraph vs table)".replace(": :", ":").strip(": ")
             values = [claim_txt, table_txt] if claim_txt != res else [table_txt, claim_txt]
             out.append(ConflictRec(
