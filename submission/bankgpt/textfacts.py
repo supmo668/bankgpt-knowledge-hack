@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
+from . import llmcheck
 from .chunker import SENT_SPLIT_RE
 from .store import Store, row_values
 from .text import amount_range, money_values
@@ -169,6 +170,7 @@ class TextFacts:
         self.s = store
         self._claims: dict[int, list[Claim]] = {}     # chunk -> claims (chunks never change once stored)
         self._disagree: dict[int, list] = {}           # view -> disagreements (a view never changes once built)
+        self.judged: set = set()                        # (cid, quote, key) pairs the optional LLM check decided
 
     def claims_of(self, cid: int) -> list[Claim]:
         if cid not in self._claims:
@@ -194,7 +196,8 @@ class TextFacts:
         return any(o != cid and s.chunks[o].kind == "para" and s.chunks[o].text == c.text and s.chunks[o].ctx != c.ctx
                    for o in s.url_chunks.get(c.url, []))
 
-    def _resolve(self, claim: Claim, vid: int, near: set) -> list[str]:
+    def _resolve(self, claim: Claim, vid: int, near: set, loose: bool = False) -> list[str]:
+        """`loose`: one distinctive shared word is enough (the near misses the optional LLM check may judge)."""
         s = self.s
         c = s.chunks[claim.cid]
         info = s.pages[c.url]
@@ -212,7 +215,7 @@ class TextFacts:
             # enough of the product's own name: two of its distinctive words, or all of them when it has fewer
             # ("mortgage" alone, in a loan-to-value aside, does not name "Mortgage Rate Relief")
             # (a stated term that is the key's term is evidence enough for one word: "Home Equity loan ... 60-month")
-            need = 1 if claim.terms else min(2, len(kw - GENERIC))
+            need = 1 if claim.terms or loose else min(2, len(kw - GENERIC))
             if len(distinct) < need or (not distinct and not (len(kw) >= 2 and kw <= near)):
                 continue
             vals = dict(row_values(s.chunks[win]))
@@ -258,6 +261,30 @@ class TextFacts:
                 out[k] = tuple(pick)    # every matching column (a table can carry two intro APYs)
         return out
 
+    def undecided(self, claim: Claim, vid: int) -> list[str]:
+        """Keys the claim may be about but the deterministic rules could not settle: no key passes the strict
+        product match, some pass with one distinctive word."""
+        c = self.s.chunks[claim.cid]
+        heading = c.ctx.split(" > ")[-1] if c.ctx else ""
+        if self.resolve(claim, vid):
+            return []
+        return self._resolve(claim, vid, _words(f"{claim.sentence} {heading}"), loose=True)
+
+    def _judged(self, claim: Claim, vid: int) -> list:
+        """Disagreements the optional LLM check finds among the undecided pairs (same fact, different value)."""
+        out = []
+        for key in self.undecided(claim, vid)[:3]:
+            tv = self.table_values([key], claim, vid)
+            if not tv or self.agrees(claim, tv):
+                continue
+            row = self.s.chunks[self.s.winners[vid][key]]
+            verdict = llmcheck.judge(claim.sentence, claim.quote, f"{row.ctx.split(' > ')[-1] if row.ctx else ''}: "
+                                                                  f"{row.text}")
+            if verdict and verdict.get("same_fact") and verdict.get("contradicts"):
+                self.judged.add((claim.cid, claim.quote, key))
+                out.append((claim, [key], tv))
+        return out
+
     @staticmethod
     def agrees(claim: Claim, tvals: dict) -> bool:
         # a single value agrees with a table range when it is one of its ends ("12.50% to 19.50%" read in parts)
@@ -281,6 +308,8 @@ class TextFacts:
             for cl in self.claims_of(cid):
                 keys = self.resolve(cl, vid)
                 if not keys:
+                    if llmcheck.enabled():
+                        out.extend(self._judged(cl, vid))
                     continue
                 tv = self.table_values(keys, cl, vid)
                 if tv and not self.agrees(cl, tv):

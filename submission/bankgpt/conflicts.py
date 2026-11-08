@@ -215,6 +215,8 @@ class ConflictFinder:
                                label).strip(" ,")
             topic = f"{product}: {label} (paragraph vs table)".replace(": :", ":").strip(": ")
             values = [claim_txt, table_txt] if claim_txt != res else [table_txt, claim_txt]
+            if any((cl.cid, cl.quote, k) in tf.judged for _, cl, _ in occ for k in keys):
+                why += " (matched to this fact by the optional LLM check)"
             out.append(ConflictRec(
                 topic=topic, values=values, resolution=res, reason=why, priority=2,
                 sources=[(pc.url, s.view_sid(si), cl0.sentence[:200]), (tc.url, s.view_sid(si), tc.text[:200])],
