@@ -138,3 +138,21 @@ class ShadowedCopiesStayStored(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CaptionQualifierSplitsProducts(unittest.TestCase):
+    """Home Loan and Home Equity refinance tables repeat the same self-describing row labels; the caption word
+    keeps them two facts, so one product's rate is never a stale copy of the other's."""
+
+    MD = ("# Rates\n\nHome Loans - Refinance\n\n| Product | Rate | APR |\n| --- | --- | --- |\n"
+          "| Refinance: 15-Year Fixed Conventional | 6.75% | 6.88% |\n\n"
+          "Home Equity Refinance\n\n| Product | Rate | APR |\n| --- | --- | --- |\n"
+          "| Refinance: 15-Year Fixed Conventional | 5.625% | 5.749% |\n")
+
+    def test_two_keys_no_conflict(self):
+        ks = solution.build()
+        ks.ingest(snap("01", "2026-05-12", {"/rates": self.MD}))
+        keys = [k for k in ks.store.timelines() if "15-year fixed conventional" in k]
+        self.assertEqual(len(keys), 2, keys)
+        self.assertTrue(any("home equity" in k for k in keys))
+        self.assertFalse([c for c in ks.conflicts() if "15-Year" in c.topic])
