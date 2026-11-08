@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 430" width="960" height="430" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title id="t">Answer latency per question</title>
+<desc id="d">Dot strip per suite of per-question answer latency in milliseconds with the p95 marked.</desc>
+<rect width="960" height="430" fill="#fcfcfb"/>
+<text x="32.0" y="40.0" font-size="20" fill="#0b0b0b" text-anchor="start" font-weight="600">Answer latency per question (ms)</text>
+<text x="32.0" y="64.0" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal">Every answer() call, run 577a1a4 on a shared runner. Full speed marks need p95 ≤ 2,000 ms.</text>
+<line x1="200.0" x2="200.0" y1="96" y2="360" stroke="#e4e3df"/>
+<text x="200.0" y="378.0" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal">0</text>
+<line x1="375.0" x2="375.0" y1="96" y2="360" stroke="#e4e3df"/>
+<text x="375.0" y="378.0" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal">25</text>
+<line x1="550.0" x2="550.0" y1="96" y2="360" stroke="#e4e3df"/>
+<text x="550.0" y="378.0" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal">50</text>
+<line x1="725.0" x2="725.0" y1="96" y2="360" stroke="#e4e3df"/>
+<text x="725.0" y="378.0" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal">75</text>
+<line x1="900.0" x2="900.0" y1="96" y2="360" stroke="#e4e3df"/>
+<text x="900.0" y="378.0" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal">100</text>
+<text x="188.0" y="140.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">public (40, kit)</text>
+<circle cx="367.3" cy="124.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>23.9 ms</title></circle>
+<circle cx="399.5" cy="131.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>28.5 ms</title></circle>
+<circle cx="414.9" cy="138.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>30.7 ms</title></circle>
+<circle cx="424.0" cy="145.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>32.0 ms</title></circle>
+<circle cx="431.0" cy="127.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>33.0 ms</title></circle>
+<circle cx="431.7" cy="134.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>33.1 ms</title></circle>
+<circle cx="433.1" cy="141.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>33.3 ms</title></circle>
+<circle cx="440.1" cy="148.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>34.3 ms</title></circle>
+<circle cx="445.0" cy="130.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>35.0 ms</title></circle>
+<circle cx="449.2" cy="137.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>35.6 ms</title></circle>
+<circle cx="452.7" cy="144.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>36.1 ms</title></circle>
+<circle cx="454.8" cy="126.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>36.4 ms</title></circle>
+<circle cx="464.6" cy="133.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>37.8 ms</title></circle>
+<circle cx="466.7" cy="140.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>38.1 ms</title></circle>
+<circle cx="468.1" cy="147.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>38.3 ms</title></circle>
+<circle cx="471.6" cy="129.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>38.8 ms</title></circle>
+<circle cx="477.9" cy="136.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>39.7 ms</title></circle>
+<circle cx="479.3" cy="143.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>39.9 ms</title></circle>
+<circle cx="491.2" cy="125.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>41.6 ms</title></circle>
+<circle cx="513.6" cy="132.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>44.8 ms</title></circle>
+<circle cx="515.0" cy="139.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>45.0 ms</title></circle>
+<circle cx="516.4" cy="146.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>45.2 ms</title></circle>
+<circle cx="516.4" cy="128.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>45.2 ms</title></circle>
+<circle cx="531.8" cy="135.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>47.4 ms</title></circle>
+<circle cx="538.8" cy="142.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>48.4 ms</title></circle>
+<circle cx="538.8" cy="124.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>48.4 ms</title></circle>
+<circle cx="548.6" cy="131.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>49.8 ms</title></circle>
+<circle cx="557.7" cy="138.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>51.1 ms</title></circle>
+<circle cx="560.5" cy="145.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>51.5 ms</title></circle>
+<circle cx="567.5" cy="127.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>52.5 ms</title></circle>
+<circle cx="568.9" cy="134.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>52.7 ms</title></circle>
+<circle cx="579.4" cy="141.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>54.2 ms</title></circle>
+<circle cx="586.4" cy="148.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>55.2 ms</title></circle>
+<circle cx="592.0" cy="130.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>56.0 ms</title></circle>
+<circle cx="599.7" cy="137.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>57.1 ms</title></circle>
+<circle cx="607.4" cy="144.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>58.2 ms</title></circle>
+<circle cx="633.3" cy="126.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>61.9 ms</title></circle>
+<circle cx="654.3" cy="133.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>64.9 ms</title></circle>
+<circle cx="680.2" cy="140.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>68.6 ms</title></circle>
+<circle cx="890.2" cy="147.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>98.6 ms</title></circle>
+<line x1="680.2" x2="680.2" y1="114.0" y2="154.0" stroke="#0b0b0b" stroke-width="2"><title>public p95 69 ms</title></line>
+<text x="686.2" y="112.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">p95 69 · p50 45</text>
+<text x="188.0" y="204.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">dev (30, tuned on)</text>
+<circle cx="232.9" cy="188.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>4.7 ms</title></circle>
+<circle cx="417.0" cy="195.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>31.0 ms</title></circle>
+<circle cx="421.9" cy="202.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>31.7 ms</title></circle>
+<circle cx="428.2" cy="209.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>32.6 ms</title></circle>
+<circle cx="438.7" cy="191.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>34.1 ms</title></circle>
+<circle cx="442.9" cy="198.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>34.7 ms</title></circle>
+<circle cx="453.4" cy="205.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>36.2 ms</title></circle>
+<circle cx="456.2" cy="212.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>36.6 ms</title></circle>
+<circle cx="462.5" cy="194.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>37.5 ms</title></circle>
+<circle cx="473.7" cy="201.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>39.1 ms</title></circle>
+<circle cx="475.1" cy="208.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>39.3 ms</title></circle>
+<circle cx="482.1" cy="190.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>40.3 ms</title></circle>
+<circle cx="488.4" cy="197.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>41.2 ms</title></circle>
+<circle cx="492.6" cy="204.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>41.8 ms</title></circle>
+<circle cx="501.7" cy="211.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>43.1 ms</title></circle>
+<circle cx="509.4" cy="193.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>44.2 ms</title></circle>
+<circle cx="519.2" cy="200.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>45.6 ms</title></circle>
+<circle cx="527.6" cy="207.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>46.8 ms</title></circle>
+<circle cx="528.3" cy="189.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>46.9 ms</title></circle>
+<circle cx="537.4" cy="196.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>48.2 ms</title></circle>
+<circle cx="539.5" cy="203.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>48.5 ms</title></circle>
+<circle cx="559.1" cy="210.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>51.3 ms</title></circle>
+<circle cx="571.7" cy="192.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>53.1 ms</title></circle>
+<circle cx="578.7" cy="199.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>54.1 ms</title></circle>
+<circle cx="594.8" cy="206.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>56.4 ms</title></circle>
+<circle cx="608.8" cy="188.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>58.4 ms</title></circle>
+<circle cx="637.5" cy="195.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>62.5 ms</title></circle>
+<circle cx="650.8" cy="202.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>64.4 ms</title></circle>
+<circle cx="670.4" cy="209.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>67.2 ms</title></circle>
+<circle cx="850.3" cy="191.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>92.9 ms</title></circle>
+<line x1="670.4" x2="670.4" y1="178.0" y2="218.0" stroke="#0b0b0b" stroke-width="2"><title>dev p95 67 ms</title></line>
+<text x="676.4" y="176.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">p95 67 · p50 44</text>
+<text x="188.0" y="268.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">blind (18, held out)</text>
+<circle cx="434.5" cy="252.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>33.5 ms</title></circle>
+<circle cx="454.8" cy="259.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>36.4 ms</title></circle>
+<circle cx="463.9" cy="266.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>37.7 ms</title></circle>
+<circle cx="477.9" cy="273.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>39.7 ms</title></circle>
+<circle cx="480.7" cy="255.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>40.1 ms</title></circle>
+<circle cx="481.4" cy="262.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>40.2 ms</title></circle>
+<circle cx="482.1" cy="269.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>40.3 ms</title></circle>
+<circle cx="507.3" cy="276.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>43.9 ms</title></circle>
+<circle cx="507.3" cy="258.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>43.9 ms</title></circle>
+<circle cx="511.5" cy="265.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>44.5 ms</title></circle>
+<circle cx="512.9" cy="272.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>44.7 ms</title></circle>
+<circle cx="518.5" cy="254.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>45.5 ms</title></circle>
+<circle cx="519.2" cy="261.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>45.6 ms</title></circle>
+<circle cx="534.6" cy="268.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>47.8 ms</title></circle>
+<circle cx="540.9" cy="275.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>48.7 ms</title></circle>
+<circle cx="557.7" cy="257.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>51.1 ms</title></circle>
+<circle cx="562.6" cy="264.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>51.8 ms</title></circle>
+<circle cx="629.8" cy="271.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>61.4 ms</title></circle>
+<line x1="629.8" x2="629.8" y1="242.0" y2="282.0" stroke="#0b0b0b" stroke-width="2"><title>blind p95 61 ms</title></line>
+<text x="635.8" y="240.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">p95 61 · p50 44</text>
+<text x="188.0" y="332.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">selftest (5, synthetic)</text>
+<circle cx="201.4" cy="316.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>0.2 ms</title></circle>
+<circle cx="201.4" cy="323.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>0.2 ms</title></circle>
+<circle cx="201.4" cy="330.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>0.2 ms</title></circle>
+<circle cx="202.1" cy="337.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>0.3 ms</title></circle>
+<circle cx="208.4" cy="319.0" r="4" fill="#2a78d6" fill-opacity="0.75" stroke="#fcfcfb" stroke-width="1"><title>1.2 ms</title></circle>
+<line x1="208.4" x2="208.4" y1="306.0" y2="346.0" stroke="#0b0b0b" stroke-width="2"><title>selftest p95 1 ms</title></line>
+<text x="214.4" y="304.0" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="normal">p95 1 · p50 0</text>
+<text x="200.0" y="412.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">Worst suite p95 is 69 ms, about 29× under the 2 s full-marks line. Ingest is not timed for scoring.</text>
+</svg>

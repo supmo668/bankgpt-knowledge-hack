@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 458" width="960" height="458" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title id="t">Public score by category</title>
+<desc id="d">Horizontal bar chart of per-category public scores: entity_attribution 1.00, should_refuse 1.00, tier_disambiguation 1.00, branch_info 0.89, temporal_as_of 0.75, stale_trap 0.71, list_completeness 0.50, conflict_resolution 0.33, current_value 0.33.</desc>
+<rect width="960" height="458" fill="#fcfcfb"/>
+<text x="32.0" y="40.0" font-size="20" fill="#0b0b0b" text-anchor="start" font-weight="600">Public score by question category</text>
+<text x="32.0" y="64.0" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal">Kit scorer, latest run at 20f92f2 (docs/eval/runs.csv). Two categories sit at 0.33.</text>
+<line x1="200.0" x2="200.0" y1="90" y2="402" stroke="#e4e3df"/>
+<text x="200.0" y="420.0" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal">0.0</text>
+<line x1="505.0" x2="505.0" y1="90" y2="402" stroke="#e4e3df"/>
+<text x="505.0" y="420.0" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal">0.5</text>
+<line x1="810.0" x2="810.0" y1="90" y2="402" stroke="#e4e3df"/>
+<text x="810.0" y="420.0" font-size="12" fill="#8a8984" text-anchor="middle" font-weight="normal">1.0</text>
+<text x="188.0" y="117.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">entity_attribution</text>
+<path d="M200.0,102.0 H806.0 Q810.0,102.0 810.0,106.0 V120.0 Q810.0,124.0 806.0,124.0 H200.0 Z" fill="#2a78d6"><title>entity_attribution: 1.00</title></path>
+<text x="818.0" y="117.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">1.00</text>
+<text x="188.0" y="151.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">should_refuse</text>
+<path d="M200.0,136.0 H806.0 Q810.0,136.0 810.0,140.0 V154.0 Q810.0,158.0 806.0,158.0 H200.0 Z" fill="#2a78d6"><title>should_refuse: 1.00</title></path>
+<text x="818.0" y="151.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">1.00</text>
+<text x="188.0" y="185.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">tier_disambiguation</text>
+<path d="M200.0,170.0 H806.0 Q810.0,170.0 810.0,174.0 V188.0 Q810.0,192.0 806.0,192.0 H200.0 Z" fill="#2a78d6"><title>tier_disambiguation: 1.00</title></path>
+<text x="818.0" y="185.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">1.00</text>
+<text x="188.0" y="219.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">branch_info</text>
+<path d="M200.0,204.0 H739.9 Q743.9,204.0 743.9,208.0 V222.0 Q743.9,226.0 739.9,226.0 H200.0 Z" fill="#2a78d6"><title>branch_info: 0.89</title></path>
+<text x="751.9" y="219.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">0.89</text>
+<text x="188.0" y="253.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">temporal_as_of</text>
+<path d="M200.0,238.0 H653.5 Q657.5,238.0 657.5,242.0 V256.0 Q657.5,260.0 653.5,260.0 H200.0 Z" fill="#2a78d6"><title>temporal_as_of: 0.75</title></path>
+<text x="665.5" y="253.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">0.75</text>
+<text x="188.0" y="287.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">stale_trap</text>
+<path d="M200.0,272.0 H631.7 Q635.7,272.0 635.7,276.0 V290.0 Q635.7,294.0 631.7,294.0 H200.0 Z" fill="#2a78d6"><title>stale_trap: 0.71</title></path>
+<text x="643.7" y="287.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">0.71</text>
+<text x="188.0" y="321.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">list_completeness</text>
+<path d="M200.0,306.0 H501.0 Q505.0,306.0 505.0,310.0 V324.0 Q505.0,328.0 501.0,328.0 H200.0 Z" fill="#2a78d6"><title>list_completeness: 0.50</title></path>
+<text x="513.0" y="321.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">0.50</text>
+<text x="188.0" y="355.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">conflict_resolution</text>
+<path d="M200.0,340.0 H399.3 Q403.3,340.0 403.3,344.0 V358.0 Q403.3,362.0 399.3,362.0 H200.0 Z" fill="#2a78d6"><title>conflict_resolution: 0.33</title></path>
+<text x="411.3" y="355.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">0.33</text>
+<text x="451.3" y="355.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">← known limit (phase 2)</text>
+<text x="188.0" y="389.0" font-size="13" fill="#0b0b0b" text-anchor="end" font-weight="normal">current_value</text>
+<path d="M200.0,374.0 H399.3 Q403.3,374.0 403.3,378.0 V392.0 Q403.3,396.0 399.3,396.0 H200.0 Z" fill="#2a78d6"><title>current_value: 0.33</title></path>
+<text x="411.3" y="389.0" font-size="13" fill="#0b0b0b" text-anchor="start" font-weight="600">0.33</text>
+<text x="451.3" y="389.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">← known limit (phase 2)</text>
+</svg>
