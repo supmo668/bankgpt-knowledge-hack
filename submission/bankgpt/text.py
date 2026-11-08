@@ -120,7 +120,7 @@ def pct_values(s: str) -> list[str]:
 def amount_range(s: str):
     """A balance / loan-amount tier stated in text -> (lo, hi) or None."""
     s2 = s.replace(",", "")
-    m = re.search(r"\$\s?(\d+(?:\.\d+)?)\s?[-–]\s?\$\s?(\d+(?:\.\d+)?)", s2)
+    m = re.search(r"\$\s?(\d+(?:\.\d+)?)\s?[-–]\s?\$?\s?(\d+(?:\.\d+)?)", s2)
     if m:
         return float(m.group(1)), float(m.group(2))
     m = re.search(r"\$\s?(\d+(?:\.\d+)?)\s?(?:\+|and (?:up|over|above)|or more)", s2)
@@ -217,3 +217,13 @@ def offer_end(text: str):
     """ISO date an offer/promotion says it ended or ends, if the text states one."""
     m = END_RE.search(text)
     return _to_iso(m.group(1)) if m else None
+
+
+def term_patterns(n: int, unit: str) -> list[str]:
+    """'10 year' also matches '120 mo'; '60 month' also matches '5 year'."""
+    pats = [rf"\b{n}[\s-]*{unit}"]
+    if unit.startswith("y"):
+        pats.append(rf"\b{n * 12}[\s-]*m")
+    elif n % 12 == 0:
+        pats.append(rf"\b{n // 12}[\s-]*y")
+    return pats

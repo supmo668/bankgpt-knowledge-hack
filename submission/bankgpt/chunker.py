@@ -177,6 +177,12 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             flush_group()
             header = [clean_inline(c)[0] for c in _split_row(s)]
             i += 2
+            data_header = None
+            if any(re.search(r"\$\s?\d|\d\s?%", h) for h in header[1:]):
+                # the "header" is really the first data row (fee schedules exported from PDF)
+                data_header = header
+                hdr = "Fee" if any("$" in h for h in header[1:]) else "Value"
+                header = ["Item"] + [hdr if k == 1 else f"{hdr} {k}" for k in range(1, len(header))]
             tcount += 1
             tkey = f"{url}#t{tcount}"
             pending_table = []
@@ -184,9 +190,13 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             h0 = header[0].strip(" *") if header else ""
             if h0 and not GENERIC_HEADER_RE.match(h0) and h0.lower() not in ctx.lower():
                 ctx = f"{ctx} > {h0}" if ctx else h0   # header names the product ("Business Platinum Visa | APR")
-            while i < n and lines[i].strip().startswith("|"):
-                cells = [clean_inline(c)[0] for c in _split_row(lines[i])]
-                i += 1
+            pending_rows = [data_header] if data_header else []
+            while pending_rows or (i < n and lines[i].strip().startswith("|")):
+                if pending_rows:
+                    cells = pending_rows.pop()
+                else:
+                    cells = [clean_inline(c)[0] for c in _split_row(lines[i])]
+                    i += 1
                 if not any(cells):
                     continue
                 pairs = {header[k] if k < len(header) and header[k] else f"col{k}": v
@@ -198,6 +208,29 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
                 pending_table.append(c)
                 chunks.append(c)
             _alias_year_tiers(pending_table)
+            continue
+        if s.startswith("|") and s.count("|") >= 3 and not (i + 1 < n and re.match(r"^\s*\|?\s*:?-{3,}", lines[i + 1])):
+            # a pipe table with no header separator (PDF fee schedules): label | value rows,
+            # single-cell rows are sub-captions
+            flush_para()
+            flush_group()
+            tcount += 1
+            tkey = f"{url}#t{tcount}"
+            sub = ""
+            while i < n and lines[i].strip().startswith("|"):
+                raw_cells = _split_row(lines[i])
+                i += 1
+                if all(re.fullmatch(r":?-{2,}:?", c) or not c for c in raw_cells):
+                    continue
+                cells = [clean_inline(c)[0] for c in raw_cells if c.strip()]
+                if len(cells) == 1:
+                    sub = cells[0]
+                    continue
+                hdr = "Fee" if any("$" in c for c in cells[1:]) else "Value"
+                pairs = {"Item": cells[0], **{(hdr if k == 1 else f"{hdr} {k}"): v for k, v in enumerate(cells[1:], 1)}}
+                txt = f"{cells[0]}: {', '.join(cells[1:])}"
+                ctx = " > ".join(x for x in (head_ctx(), section, caption, sub) if x)
+                chunks.append(Chunk(url, txt, ctx, "row", table=tkey, cells=pairs))
             continue
         if not s:
             flush_para()

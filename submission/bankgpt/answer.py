@@ -9,7 +9,8 @@ from typing import Optional
 
 from .chunker import Chunk
 from .store import Store
-from .text import amount_range, expand_query, money_values, numwords_to_digits, stem, tokens, year_range
+from .text import (amount_range, expand_query, money_values, numwords_to_digits, stem, term_patterns, tokens,
+                   year_range)
 
 REFUSAL_TEXT = "I don't know: that isn't listed on the website. Please contact us and a team member can help."
 
@@ -33,7 +34,8 @@ SUBJECT_SYN = {"car": "auto", "vehicle": "auto", "truck": "auto", "house": "home
                "college": "student", "school": "student", "mortgage": "home"}
 ADDRESS_RE = re.compile(r"\baddress\b|\bwhere is\b|\blocated\b", re.I)
 DESCRIPTIVE_RE = re.compile(r"^(what is|what's|what are|tell me about|describe|can i|do you|does dupaco|is there|how does)\b", re.I)
-NUMBER_Q_RE = re.compile(r"\b(routing|phone|telephone|fax|account|aba|nmls)\s*(number|no\.?|#)|\brouting\b", re.I)
+NUMBER_Q_RE = re.compile(r"\b(routing|phone|telephone|fax|account|aba|nmls)\s*(number|no\.?|#)|\brouting\b|"
+                         r"\bnumber\b.{0,30}\bcall\b|\bcall\b.{0,30}\bnumber\b|\bwho do i call\b", re.I)
 DATE_PHRASE_RE = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2},?\s+)?(19|20)\d\d\b|"
                             r"\b(19|20)\d\d-\d\d-\d\d\b|\b(in|of|during|since)\s+(19|20)\d\d\b", re.I)
 PROCEDURE_RE = re.compile(r"\bhow (do|can|would) i\b|\bwhere (do|can) i\b|\bonline\b", re.I)
@@ -217,7 +219,7 @@ class Answerer:
             if address_q and re.search(r"\b(location|branch)", c.ctx, re.I):
                 f *= 1.5
             for n, unit in terms:
-                if re.search(rf"\b{n}[\s-]*{unit}", head if c.kind == "row" else body):
+                if any(re.search(p, head if c.kind == "row" else body) for p in term_patterns(n, unit)):
                     f *= 1.6
                 elif c.kind == "row" and re.search(r"\b\d{1,3}[\s-]*(month|year)", head):
                     f *= 0.35
@@ -293,7 +295,7 @@ class Answerer:
                 continue
             if it.rate and not (_row_has_rate(c) and info.kind in ("rate_sheet", "product", "landing", "home")):
                 continue
-            if (it.rate or it.fee) and subj and not all(_covers(hay, x) for x in subj):
+            if (it.rate or it.fee) and subj and not all(_covers(f"{c.ctx} {c.text}".lower(), x) for x in subj):
                 continue
             if it.rate and not self._tier_fits(question, c):
                 continue
@@ -360,7 +362,7 @@ class Answerer:
             if re.search(pat, ql) and not re.search(pat, body):
                 return False
         for n, unit in TERM_RE.findall(ql):
-            if not re.search(rf"\b{n}[\s-]*{unit[0]}", body):
+            if not any(re.search(p, body) for p in term_patterns(int(n), unit[0])):
                 return False
         amounts = [v for v in money_values(question) if v >= 50]
         if amounts and c.kind == "row":
@@ -453,7 +455,9 @@ class Answerer:
             return " Schedules vary by branch. ".join(s.chunks[g].text for g in groups) if len(groups) > 1 \
                 else c.text, groups
         txt = c.text
-        if len(txt) > 360:
+        if it.fee and len(re.findall(r"\$\s?\d", txt)) >= 3:
+            txt = self._best_clause(question, txt)
+        elif len(txt) > 360:
             txt = self._best_sentences(question, txt)
         used = [cid]
         if DESCRIPTIVE_RE.search(question.strip()) and not (it.rate or it.fee or it.count_noun or it.hours):
@@ -477,6 +481,17 @@ class Answerer:
         parts = [_short(s.chunks[r].text) for r in rids]
         lead = f"{cap}: " if cap and not re.search(r"\d", cap) and cap.lower() not in parts[0].lower() else ""
         return lead + "; ".join(parts) + "."
+
+    def _best_clause(self, question: str, txt: str) -> str:
+        """A flattened fee list ('Official check $5.00 each Domestic wire $25.00 each ...'): the one item asked."""
+        q = set(tokens(expand_query(question)))
+        best, best_sc = txt[:300], 0
+        for m in re.finditer(r"([^$]{3,90}?)\s*(\$\s?\d[\d,]*(?:\.\d+)?\*?(?:\s*(?:each|per \w+))?)", txt):
+            label = re.split(r"(?<=each)|(?<=month\))|(?<=inquiry)", m.group(1))[-1].strip(" .;,")
+            sc = sum(self.s.idf(t) for t in q & set(tokens(label)))
+            if sc > best_sc:
+                best, best_sc = f"{label}: {m.group(2).strip()}", sc
+        return best
 
     def _best_sentences(self, question: str, txt: str, k: int = 2) -> str:
         sents = re.split(r"(?<=[.!?])\s+(?=[A-Z“\"])", txt)
