@@ -163,6 +163,9 @@ def _tier(key: str) -> Optional[tuple]:
     return float(lo), float(hi.lstrip("$"))
 
 
+JUDGE_MAX_KEYS = 3      # candidate rows the optional LLM check sees per claim (bounds calls per sentence)
+
+
 class TextFacts:
     """Claims per paragraph chunk (cached) and their resolution against one view's table facts."""
 
@@ -263,27 +266,32 @@ class TextFacts:
 
     def undecided(self, claim: Claim, vid: int) -> list[str]:
         """Keys the claim may be about but the deterministic rules could not settle: no key passes the strict
-        product match, some pass with one distinctive word."""
+        product match, some pass with one distinctive word. Same word order as `resolve`: the sentence first, its
+        heading only when the sentence names nothing, and never the heading of a repeated paragraph. The caller
+        has already found `resolve` empty."""
+        own = self._resolve(claim, vid, _words(claim.sentence), loose=True)
+        if own or self._repeated(claim.cid):
+            return own
         c = self.s.chunks[claim.cid]
         heading = c.ctx.split(" > ")[-1] if c.ctx else ""
-        if self.resolve(claim, vid):
-            return []
         return self._resolve(claim, vid, _words(f"{claim.sentence} {heading}"), loose=True)
 
     def _judged(self, claim: Claim, vid: int) -> list:
-        """Disagreements the optional LLM check finds among the undecided pairs (same fact, different value)."""
-        out = []
-        for key in self.undecided(claim, vid)[:3]:
-            tv = self.table_values([key], claim, vid)
-            if not tv or self.agrees(claim, tv):
-                continue
+        """Disagreements the optional LLM check finds among the undecided pairs (same fact, different value).
+        Like the rules, a claim that any of its candidate tiers carries agrees and is never judged; otherwise the
+        check sees each candidate row (at most JUDGE_MAX_KEYS) and one confirmed row makes the disagreement."""
+        keys = self.undecided(claim, vid)
+        tv = self.table_values(keys, claim, vid)
+        if not tv or self.agrees(claim, tv):
+            return []
+        for key in sorted(tv)[:JUDGE_MAX_KEYS]:
             row = self.s.chunks[self.s.winners[vid][key]]
             verdict = llmcheck.judge(claim.sentence, claim.quote, f"{row.ctx.split(' > ')[-1] if row.ctx else ''}: "
                                                                   f"{row.text}")
             if verdict and verdict.get("same_fact") and verdict.get("contradicts"):
                 self.judged.add((claim.cid, claim.quote, key))
-                out.append((claim, [key], tv))
-        return out
+                return [(claim, [key], {key: tv[key]})]
+        return []
 
     @staticmethod
     def agrees(claim: Claim, tvals: dict) -> bool:
