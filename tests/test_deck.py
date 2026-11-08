@@ -119,6 +119,15 @@ class Figures(unittest.TestCase):
             self.assertIn(f"figures/{name}", md)
 
 
+class Pdf(unittest.TestCase):
+    def test_pdf_has_one_page_per_slide(self):
+        md = re.sub(r"<!--.*?-->", "", (DECK / "deck.md").read_text(), flags=re.S)
+        slides = [s for s in re.split(r"^---\s*$", md, flags=re.M) if s.strip()]
+        pdf = (DECK / "deck.pdf").read_bytes()
+        self.assertEqual(len(re.findall(rb"/Type /Page\b", pdf)), len(slides),
+                         "deck.pdf is stale: cd scripts/deck && node build_pdf.mjs")
+
+
 class NoLeak(unittest.TestCase):
     """The rules forbid redistributing the site; the public eval answers are the organisers'."""
 
