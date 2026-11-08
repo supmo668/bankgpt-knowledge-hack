@@ -136,9 +136,6 @@ class ShadowedCopiesStayStored(unittest.TestCase):
         self.assertNotIn("2.50", ks.answer(Q).text)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class CaptionQualifierSplitsProducts(unittest.TestCase):
     """Home Loan and Home Equity refinance tables repeat the same self-describing row labels; the caption word
@@ -156,3 +153,94 @@ class CaptionQualifierSplitsProducts(unittest.TestCase):
         self.assertEqual(len(keys), 2, keys)
         self.assertTrue(any("home equity" in k for k in keys))
         self.assertFalse([c for c in ks.conflicts() if "15-Year" in c.topic])
+
+
+T12 = "# Rates\n\nRegular\n\n| Certificate | APY |\n| --- | --- |\n| 12 Month | 2.90% |\n"
+T24 = "# Specials\n\nSpecials\n\n| Certificate | APY |\n| --- | --- |\n| 24 Month | {v} |\n\nRates are effective as of {e}.\n"
+Q24 = "What is the 24 month certificate APY?"
+
+
+class BackdatedClaimCannotReachOverACrawlThatLackedIt(unittest.TestCase):
+    """F1: a value whose page states an effective date before crawls that did not show the fact starts at the
+    first view that shows it, so `facts_at` and `answer` agree."""
+
+    def test_new_fact_backdated_before_the_earlier_crawl(self):
+        ks = solution.build()
+        ks.ingest(snap("01", "2026-05-12", {"/rates": T12}))
+        ks.ingest(snap("02", "2026-06-09", {"/rates": T12, "/specials": T24.format(v="4.10%", e="05/03/2026")}))
+        k = key_of(ks, "24 month")
+        vs = [f for f in ks.store.timeline(k) if not f.shadowed]
+        self.assertEqual(vs[0].valid_from, "2026-06-09")
+        self.assertNotIn(k, ks.store.facts_at("2026-05-20"))
+        self.assertFalse(ks.answer(Q24, as_of="2026-05-20").confident)
+
+    def test_fact_gone_then_back_with_a_date_inside_the_absence(self):
+        ks = solution.build()
+        ks.ingest(snap("01", "2026-05-12", {"/rates": T12, "/specials": T24.format(v="3.90%", e="05/01/2026")}))
+        # the page is crawled without the row (a page missing from a crawl would be carried forward instead)
+        ks.ingest(snap("02", "2026-05-19", {"/rates": T12, "/specials": "# Specials\n\nNo specials right now.\n"}))
+        ks.ingest(snap("03", "2026-06-09", {"/rates": T12, "/specials": "# Specials\n\nNo specials right now.\n"}))
+        ks.ingest(snap("04", "2026-08-27", {"/rates": T12, "/specials": T24.format(v="4.10%", e="06/01/2026")}))
+        k = key_of(ks, "24 month")
+        vs = [(f.valid_from, f.valid_to) for f in ks.store.timeline(k) if not f.shadowed]
+        self.assertEqual(vs, [("2026-05-01", "2026-05-19"), ("2026-08-27", None)])
+        self.assertNotIn(k, ks.store.facts_at("2026-06-05"))
+        self.assertFalse(ks.answer(Q24, as_of="2026-06-05").confident)
+
+
+class OfferEndsAfterTheLastCrawl(unittest.TestCase):
+    """F2/F4: an offer the newest crawl still shows stops being quoted the day after its stated end date; while
+    it runs, its version carries the scheduled end, not an 'ended' reason."""
+    PROMO = OfferEndsInsideTheGap.PROMO.replace("2026-07-31", "2026-08-27")
+    Q9 = OfferEndsInsideTheGap.Q9
+
+    @classmethod
+    def setUpClass(cls):
+        cls.ks = solution.build()
+        cls.ks.ingest(snap("01", "2026-08-20", {"/promo-lp": cls.PROMO}))
+
+    def test_refused_after_the_end_date(self):
+        self.assertIn("4.95%", self.ks.answer(self.Q9, as_of="2026-08-27").text)
+        self.assertIn("4.95%", self.ks.answer(self.Q9).text)        # no as_of: the newest crawl, offer live
+        for d in ("2026-08-28", "2026-09-15"):
+            a = self.ks.answer(self.Q9, as_of=d)
+            self.assertFalse(a.confident, a.text)
+            self.assertNotIn("4.95", a.text)
+        self.assertEqual({k for k in self.ks.store.facts_at("2026-09-15") if "9-month" in k}, set())
+
+    def test_scheduled_end_is_not_reported_as_ended(self):
+        k = next(k for k in self.ks.store.timelines() if "9-month" in k)
+        live = [f for f in self.ks.store.timeline(k) if not f.shadowed]
+        self.assertEqual(len(live), 1)
+        self.assertEqual(live[0].valid_to, "2026-08-28")
+        self.assertIn("stated end date", live[0].closed_reason)
+
+
+class OfferAlreadyEndedIsNeverCurrent(unittest.TestCase):
+    """F3: an offer shown after its own end date never yields a version with valid_to before valid_from."""
+
+    def test_no_inverted_interval(self):
+        ks = solution.build()
+        ks.ingest(snap("01", "2026-09-01", {"/promo-lp": "# Promo\n\nPromo certificate APY: 4.00% (offer ends 2026-06-30)\n"}))
+        for vs in ks.store.timelines().values():
+            for f in vs:
+                self.assertTrue(f.valid_to is None or f.valid_from < f.valid_to, f)
+
+
+class ShadowedCopyGoneAndBack(unittest.TestCase):
+    """F7: a stale copy that leaves the site and comes back is two shadowed versions, not one span over the gap."""
+
+    def test_two_shadowed_versions(self):
+        stale = ("# Calculator\n\nRegular\n\n| Certificate | APY |\n| --- | --- |\n| 12 Month | 2.50% |\n\n"
+                 "Rates are effective as of 01/01/2026.\n")
+        rates = RATES.format(v="2.90%", e="05/01/2026")
+        ks = solution.build()
+        ks.ingest(snap("01", "2026-05-12", {"/rates": rates, "/calculators/savings": stale}))
+        ks.ingest(snap("02", "2026-06-09", {"/rates": rates, "/calculators/savings": "# Calculator\n\nTry it.\n"}))
+        ks.ingest(snap("03", "2026-08-27", {"/rates": rates, "/calculators/savings": stale}))
+        sh = [(f.valid_from, f.valid_to) for f in ks.store.timeline(key_of(ks)) if f.shadowed]
+        self.assertEqual(sh, [("2026-05-12", "2026-06-09"), ("2026-08-27", None)])
+
+
+if __name__ == "__main__":
+    unittest.main()
