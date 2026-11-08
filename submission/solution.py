@@ -44,7 +44,7 @@ class BankKnowledge:
 
     def answer(self, question: str, as_of: Optional[str] = None) -> Answer:
         as_of = as_of or as_of_from_text(question)
-        si = self.store.snapshot_for(as_of)
+        si = self.store.view_for(as_of)   # the interval in force on as_of (a crawl or a dated change)
         if si < 0:   # nothing ingested yet
             return Answer(text="I don't know: no website snapshots have been loaded yet.", confident=False)
         key = (" ".join(question.split()), si)   # exact wording: the entity gate reads capitalisation

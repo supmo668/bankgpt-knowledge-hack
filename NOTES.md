@@ -6,8 +6,10 @@
 python harness/run_eval.py --submission submission --eval eval/public_eval.jsonl
 ```
 
-**API keys: none.** v1 is fully deterministic: standard library only, no network, no model calls.
-`requirements.txt` is intentionally empty. It runs on a clean Python 3.11 (checked with 3.11.10) and 3.13.
+**API keys: none by default.** The default run is fully deterministic: standard library only, no network, no
+model calls. `requirements.txt` is intentionally empty. It runs on a clean Python 3.11 (checked with 3.11.10) and
+3.13. The one exception is opt-in: with `BANKGPT_LLM_CHECK=1` the optional LLM contradiction check (below) needs
+`ANTHROPIC_API_KEY` and the `anthropic` package (`pip install anthropic`). Unset, nothing is imported or called.
 
 ## Getting the data (not in this repo)
 
@@ -40,8 +42,9 @@ mirrored changes merged), plus dated text facts (branch counts in press-release 
 recognitions). The resolution is the value the answer path gives today.
 
 **Answer (p95 ≈ 0.05 s).**
-1. Pick the view: `as_of=None` → the latest snapshot; `as_of=D` → the newest snapshot taken on or before D. An
-   "as of May 2026" phrase in the question text works too.
+1. Pick the view: `as_of=None` → the latest snapshot; `as_of=D` → the view in force on D (the newest crawl or
+   interval view dated on or before D, see "Validity intervals" below). An "as of May 2026" phrase in the
+   question text works too.
 2. Detect intent: rate, fee, hours, count, link, list, address, superlative, descriptive.
 3. Rank with BM25 × authority × recency × qualifier fit: the term, amount and model year asked for must match the
    row's tier, a qualifier the question didn't ask for (jumbo, business, IRA, intro, refinance…) is penalised, and
@@ -51,9 +54,12 @@ recognitions). The resolution is the value the answer path gives today.
    counted noun. Proper names in the question (Galena, Hy-Vee, Mullan Avenue) must appear in the passage.
 5. Compose one value per fact: the matching row(s) of one table (all tiers only when no tier was named), or the
    best one or two sentences. Superseded *table and `label: value`* facts are shadowed and never quoted.
-   Free-text paragraphs are not fact-checked against the tables; they are kept out of rate answers by the gates
-   in step 4 (rate sheet / product / landing / home pages only, real rate value, named product). That is a
-   known limit. The reason a value won goes in `conflict_note`.
+   Paragraph rates are kept out of rate answers by the gates in step 4 (rate sheet / product / landing / home
+   pages only, real rate value, named product); v2 checks them against the tables in `conflicts()` (see
+   "Free-text facts"). Award questions take the newest dated statement about the recognition, a sentence that
+   refers back to the passage it follows ("This grant covers …") is kept with it, and a yes/no question
+   about a stated value ("Does any club account earn 1.25% APY?") checks the value instead of retrieving by it.
+   The reason a value won goes in `conflict_note`.
 6. Refuse honestly (`confident=False`, no digits in the text) when nothing passes the gates, or the best passage
    covers under 25% of the question's information (IDF mass).
 
@@ -86,6 +92,73 @@ Unit-tested in `tests/test_currency_rules.py` (decision D3).
    balance or loan-amount tier, personal vs business, model year, purchase vs refinance.
 7. **When the site doesn't say, say so.** No guessing across terms or tiers. "It isn't listed; please contact
    us" with no numbers.
+
+## Validity intervals (v2)
+
+A crawl only says what the site showed on the day it was taken. Pages say more: "Rates are effective as of
+09/25/2026", "offer valid through June 30, 2026". v2 turns both into time-exact intervals.
+
+- **Views.** Every crawl is a view dated on its `taken_on`. Between two crawls A and B, each table of B whose
+  version differs from A and whose stated effective date E falls strictly inside the gap (A < E < B) opens an
+  *interval view* on E: A's content with that table's B version swapped in. An offer visible in A whose end date
+  passes inside the gap opens a view the day after it ends (the offer closes there). `answer(q, as_of=D)` uses the
+  newest view dated on or before D, so an `as_of` between crawls lands on the stated effective date, not on the
+  nearest crawl.
+- **Fact timelines.** Each fact key has versions with `valid_from` / `valid_to` (`Store.timeline(key)`,
+  `Store.facts_at(as_of)`). `valid_from` is the stated effective date when the page gives one and no earlier crawl
+  contradicts it, else the date of the view where the value first appeared. A version closes when a newer value of
+  the same key takes over (`closed_reason` = "replaced by … (effective …)"), when its offer ends ("offer ended
+  …"), or when the fact disappears from the site.
+- **Shadowed values stay stored.** A losing copy (a stale calculator or landing page) is kept as a version with
+  `shadowed=True`, its own interval, and the currency rule that beat it ("shadowed: loses to /rates on newer
+  effective date …"). It is never quoted.
+- **Observation beats a backdated claim.** If B says "effective 05/01" but crawl A, taken 05/12, still showed the
+  old value, the switch stays at B's crawl date: we saw the old value live on a day the new one claims to cover.
+- **Undated changes** switch at the crawl that first shows them (there is no better date to use).
+- **After the newest crawl**, an offer it still shows stops being quoted the day after its stated end date
+  (a *trailing view*); while it runs, its version carries that scheduled end ("offer ends …, stated end date").
+- **Before the first crawl**, `answer` falls back to the first crawl (so a question about an earlier date still
+  gets the oldest known value), while `facts_at` is exact and returns only facts whose interval has begun.
+- **Conflicts come from observed crawls only.** Interval and trailing views are inferred states, so they shape
+  answers and timelines but never add entries to `conflicts()`.
+- Snapshots are expected in date order, as the harness delivers them (`run_eval.py` sorts by `taken_on`).
+
+Tested on synthetic pages in `tests/test_intervals.py` (effective date inside a gap, backdated date vs
+observation, undated change, offer ending mid-gap, shadowed copies stored). `docs/eval/dev_eval.jsonl` carries
+`dev-gap-*` items whose `as_of` falls between snapshots, built from snapshot diffs.
+
+## Free-text facts (v2)
+
+`bankgpt/textfacts.py` reads rate statements out of paragraphs and checks them against the tables.
+
+- **Claims.** A claim is one value a sentence states, with its qualifiers: the column (APY, APR, dividend rate),
+  intro or standard, the term in months, the balance or loan amount ("borrow $30,000", "$25,000.00-99,999.99 at
+  4.00%"), and a stated "as of" date. Ranges ("12.50% APR to 19.50% APR") are one claim. Bounds and hypotheticals
+  are not claims: floors, caps, "never less than", prime-plus margins, "if you do not qualify", averages.
+- **Entity resolution.** A claim maps to the same fact keys the tables use: the key must have the claim's column,
+  the stated term, and a tier containing the stated amount; it must share a distinctive product word with the
+  sentence ("achieve", "atv", "equity"; not "loan" or "savings"), or contain every word of an all-generic name
+  ("personal loan"); a standard claim never maps to an intro key. The sentence's own words decide first, and its
+  heading only when the sentence names no product and the paragraph is not repeated under other headings, because
+  one disclosure paragraph is often repeated under every product tab of a page. Without a stated term, the sentence
+  needs two of the product's distinctive words (or all of them, when it has fewer). Intro values are compared only
+  with intro columns, standard values only with standard ones. Personal pages never map to business products. Ties are kept: a claim that names no tier
+  maps to every tier of the product, and agrees when any of them carries its value.
+- **Conflicts.** In each crawl, a claim that no tier of its product carries is a paragraph-vs-table conflict
+  (topic "… (paragraph vs table)"), one entry per statement and fact, while the fact is still on the site. It is
+  resolved by the same rule order as table rows (offer live, effective date, present in crawl, authority,
+  publication date, first seen), where the sentence's stated "as of" date counts as its effective date. A
+  paragraph the newest crawl no longer shows has lost to the table's current value.
+- **Counts and awards** stay dated text facts: the newest publication wins (a branch count,
+  "the Nth time" a ranking named the credit union).
+- **Not covered yet:** fees and opening hours stated in paragraphs are not checked against the fee and hours
+  tables.
+
+Tested on synthetic pages in `tests/test_textfacts.py`. `docs/eval/conflicts_gold.json` carries 4
+`paragraph_vs_table` gold cases (cg-13 … cg-16) built from snapshot diffs: two stale auto-loan payment examples and
+two press releases stating an older Mortgage Rate Relief APR. Those are all the paragraph-vs-table contradictions
+the five snapshots hold under these rules. An earlier draft also flagged an Achieve money market note; the quality
+gate showed the rate sheet's intro column carries the same value, so it was a false positive and was dropped.
 
 ## Embedding it in another Python app (R7)
 
@@ -145,9 +218,35 @@ authority. Public score, conflicts and every existing test are unchanged (0.7705
   Run `python demo/app.py` and open http://127.0.0.1:8765. Standard library only; it binds to localhost.
 - `tests/`: `python -m unittest discover -s tests` (synthetic pages; no snapshot data needed).
 
-## Phase 2 (not in v1)
+## Optional LLM contradiction check (v2, off by default)
+
+`bankgpt/llmcheck.py`. It judges only the free-text pairs the rules above leave undecided: a paragraph value whose
+product the sentence names too weakly for the strict match (one distinctive product word, no stated term) but
+where some table key would match on that one word. For each such (sentence, quoted value, table row) pair it asks
+one question: is the sentence stating this row's fact, and does it give a different value? A "yes, yes" verdict
+adds a paragraph-vs-table conflict, resolved by the same currency rules, with "(matched to this fact by the
+optional LLM check)" in its reason. Pairs the rules decide never reach it, and answers never depend on it. As in
+the rules, a sentence that any candidate tier agrees with is not judged, and a paragraph repeated under several
+headings is never matched through a heading. At most 3 candidate rows are judged per sentence
+(`JUDGE_MAX_KEYS`); each request has a 30 s timeout and one retry, so a stalled network cannot hold the ingest.
+
+    BANKGPT_LLM_CHECK=1     turn it on (unset or any other value: off, no import, no call)
+    ANTHROPIC_API_KEY       the credential (only needed for pairs not yet in the cache)
+    BANKGPT_LLM_MODEL       model id (default claude-opus-5-5, low effort)
+    BANKGPT_LLM_CACHE       verdict cache file (default submission/.llm_cache.json, git-ignored)
+
+- **Repeatable.** Verdicts are cached by a sha256 of (prompt version, model, sentence, value, row), so a repeat run
+  gives identical conflicts and answers and needs no network.
+- **Fails closed.** Any failure (package missing, no key, network, refusal, unparseable reply) is "no verdict": the
+  pair stays undecided and the deterministic result stands. A cache file or entry of the wrong shape is ignored. A failed pair is tried once per process and is never
+  cached on disk, so a later run with a key judges it.
+- **Size on the kit data.** One distinct undecided pair across the five snapshots, so a flag-on run makes at most
+  one model call. With the flag on and no usable key the scores are identical to the flag-off run (RESULTS.md).
+- Tested with the network function stubbed (`tests/test_llmcheck.py`): off by default, only undecided pairs judged,
+  the disk cache survives a restart, failures are no verdict and asked once per process.
+
+## Not covered yet
 
 An LLM answer-composer for the questions lexical retrieval can't settle (cross-passage synthesis such as "no
-tier pays 0.35%"). The plan: opt-in behind an environment flag, temperature 0, answers cached for consistency,
-and adopted only if it raises the public score without breaking determinism or the 2 s p95. It would need
-`ANTHROPIC_API_KEY`. v1 needs no key.
+tier pays 0.35%") is still not built. It would follow the same pattern: opt-in flag, cached by input hash, adopted
+only if it raises the public score without breaking determinism or the 2 s p95.

@@ -8,7 +8,7 @@ from datetime import date
 from typing import Optional
 
 from .chunker import Chunk
-from .store import Store, row_key
+from .store import Store, row_key, row_values
 from .text import (amount_range, expand_query, money_values, numwords_to_digits, stem, term_patterns, tokens,
                    year_range)
 
@@ -43,6 +43,27 @@ NUMBER_Q_RE = re.compile(r"\b(routing|phone|telephone|fax|account|aba|nmls)\s*(n
                          r"\bnumber\b.{0,30}\bcall\b|\bcall\b.{0,30}\bnumber\b|\bwho do i call\b", re.I)
 DATE_PHRASE_RE = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2},?\s+)?(19|20)\d\d\b|"
                             r"\b(19|20)\d\d-\d\d-\d\d\b|\b(in|of|during|since)\s+(19|20)\d\d\b", re.I)
+# free-text award facts: the organisation that recognised the institution (the newest dated statement wins)
+ORG_RE = re.compile(r"\b(Forbes|Newsweek|BauerFinancial|Bauer|S&P Global|Des Moines Register|Credit Union Journal|"
+                    r"J\.D\. Power|Money Magazine)\b")
+AWARD_RE = re.compile(r"(?i)\b(recogni(?:[sz]|tion)\w*|awards?|awarded|rank(?:ed|ing|s)?|named|honou?r\w*|best|top)\b")
+ORDINAL_TIME_RE = re.compile(r"(?i)\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th))"
+                             r" (?:consecutive )?(?:time|year)\b")
+# a sentence that refers back to the entity of the sentence before it ("This initiative provides up to $15,000")
+ANAPHOR_RE = re.compile(r"^(?:This|These|The)\s+(?:new\s+)?(?:initiative|program|programme|offer|grant|loan|account|"
+                        r"card|benefit|service|fund|product|partnership|award|recognition)s?\b")
+# a yes/no check of a stated value ("Does any club account earn 1.25% APY?", "Is there a certificate at 5%?")
+VERIFY_RE = re.compile(r"(?i)^\s*(?:do|does|is|are) (?:any|there|dupaco|you)\b.*\b(?:pay|earn|offer|yield|get|at)\b[^?]*"
+                       r"\d(?:\.\d+)?\s?%")
+COMPARE_RE = re.compile(r"(?i)\b(?:more|less|higher|lower|greater|fewer) than\b|\bat (?:least|most)\b|\b(?:above|below|over|"
+                        r"under|up to|exceed\w*|or (?:more|less|higher|lower))\b")
+
+
+def _verify(q: str) -> bool:
+    """A yes/no check of one stated value (short questions only: the pattern backtracks on long input)."""
+    return len(q) <= 300 and bool(VERIFY_RE.search(q))
+
+
 HISTORY_RE = re.compile(r"\b(expired|ended|past|previous|former|used to|old)\b", re.I)
 PROCEDURE_RE = re.compile(r"\bhow (do|can|would) i\b|\bwhere (do|can) i\b|\bonline\b", re.I)
 COUNT_INTENT_RE = re.compile(r"\bhow many\b", re.I)
@@ -89,6 +110,26 @@ class Intent:
     listing: bool
     hi: bool
     lo: bool
+    org: Optional[str] = None      # a recognition question names the organisation that gave it
+
+
+_NOT_ORG = frozenset("I Dupaco Credit Union Community What Which Who When How Has Have Is Are Does Did Do Can The A An "
+                    "Visa Mastercard".split())
+
+
+def _award_org(q: str) -> Optional[str]:
+    """The organisation a recognition question names: a known ranking body, else a capitalised name that is not
+    the institution itself or a question word ("Which honors has Kiplinger given Dupaco?" -> "Kiplinger")."""
+    if not AWARD_RE.search(q):
+        return None
+    m = ORG_RE.search(q)
+    if m:
+        return m.group(1)
+    for name in re.findall(r"\b([A-Z][\w&.'-]+(?:\s+[A-Z][\w&.'-]+)*)", q):
+        words = [w for w in name.split() if w not in _NOT_ORG]
+        if words:
+            return " ".join(words)
+    return None
 
 
 def intent_of(q: str) -> Intent:
@@ -107,6 +148,7 @@ def intent_of(q: str) -> Intent:
         listing=bool(LIST_INTENT_RE.search(q)),
         hi=bool(SUPER_HI_RE.search(q)),
         lo=bool(SUPER_LO_RE.search(q)),
+        org=_award_org(q),
     )
 
 
@@ -190,12 +232,15 @@ class Answerer:
     def rank(self, question: str, si: int, it: Intent, limit: int = 80) -> list[tuple[float, int]]:
         s = self.s
         qx = expand_query(_strip_dates(question))
+        if _verify(question):
+            # "Does any club account earn 1.25% APY?": the value is what to check, not what to look up
+            qx = re.sub(r"\d+(?:\.\d+)?\s?%", " ", qx)
         qtoks = tokens(qx)
         qset = set(qtoks)
         raw = s.bm25(qtoks, si)
         if not raw:
             return []
-        ref = date.fromisoformat(s.snapshots[si][1])
+        ref = date.fromisoformat(s.view_date(si))
         ql = question.lower()
         terms = [(int(n), u[0]) for n, u in TERM_RE.findall(ql)]
         q_money = [v for v in money_values(question) if v >= 50]
@@ -326,9 +371,14 @@ class Answerer:
             return Result(REFUSAL_TEXT, confident=False)
         if it.count_noun:
             best = self._latest_statement(best, ranked, ents, it.count_noun)
+        elif it.org:
+            best = self._latest_award(best, ranked, it.org)
         sc, cid = best
         text, used = self._compose(question, it, cid, sc, ranked, si)
         text = self._titled(text, cid)
+        lead = self._verify_lead(question, cid, si)
+        if lead:
+            text = f"{lead} {text}"
         if PROCEDURE_RE.search(question):
             link = self._action_link(question, cid, si)
             if link and link not in text:
@@ -381,6 +431,66 @@ class Answerer:
             return best
         _, sc, cid = max(pool, key=lambda t: (t[0], t[1]))
         return (sc, cid)
+
+    def _latest_award(self, best, ranked, org: str):
+        """Recognitions repeat yearly ("the fourth time", "the fifth time"): the most recently published
+        statement naming the organisation and an award word wins, as for counts."""
+        s = self.s
+        pool = []
+        for sc, cid in ranked[:80]:
+            c = s.chunks[cid]
+            if c.kind not in ("para", "sent") or org not in c.text or not AWARD_RE.search(c.text):
+                continue
+            info = s.pages[c.url]
+            if not info.pub_date:
+                continue
+            # a statement about the recognition (its own release, or "the Nth time") outranks a passing mention
+            # in boilerplate ("It is a Newsweek best regional credit union ...")
+            ordinal = bool(ORDINAL_TIME_RE.search(c.text))
+            pool.append((org in info.title or ordinal, info.pub_date, ordinal, sc, cid))
+        if not pool:
+            return best
+        *_, sc, cid = max(pool, key=lambda t: t[:4])
+        return (sc, cid)
+
+    def _verify_lead(self, question: str, cid: int, si: int) -> Optional[str]:
+        """"Yes" / "No" for a question that checks one stated value against a product's table ("Do any of the
+        club savings tiers earn 1.25% APY?"). Only the column asked is compared, over every tier of the table, and a
+        value inside a stated range counts. Comparisons ("at least", "more than") get no lead."""
+        s = self.s
+        c = s.chunks[cid]
+        vm = re.search(r"(\d+(?:\.\d+)?)\s?%\s*(APY|APR|dividend|rate)?", question, re.I)
+        if not (_verify(question) and vm) or COMPARE_RE.search(question) or c.kind != "row" or not c.table:
+            return None
+        v = float(vm.group(1))
+        unit = (vm.group(2) or "").lower()
+        col = "apy" if unit == "apy" else "apr" if unit == "apr" else "div" if unit == "dividend" else None
+        vals = []
+        for r in s.rows_of(c.table, si):
+            for k, nums in row_values(s.chunks[r]):
+                if col is None or k.split("-")[0] == col:
+                    vals.append(nums)
+        if not vals:
+            return None
+        hit = any(v in nums or (len(nums) == 2 and nums[0] <= v <= nums[1]) for nums in vals)
+        return f"Yes: {v:g}% is listed." if hit else f"No: none of these tiers pays {v:g}%."
+
+    def _continuation(self, cid: int, si: int) -> Optional[str]:
+        """The sentence right after chunk `cid` in its paragraph (as shown in view `si`) when it refers back to it
+        (entity resolution in free text: "This grant ..." is about the program the sentence before named)."""
+        s = self.s
+        c = s.chunks[cid]
+        tail = c.text.strip()[-80:]
+        bit = 1 << si
+        for pid in s.url_chunks.get(c.url, []):
+            p = s.chunks[pid]
+            if p.kind != "para" or pid == cid or tail not in p.text or not s.chunk_view[pid] & bit:
+                continue
+            after = p.text[p.text.index(tail) + len(tail):].strip()
+            nxt = re.split(r"(?<=[.!?])\s+(?=[A-Z“\"])", after, maxsplit=1)[0] if after else ""
+            if nxt and ANAPHOR_RE.match(nxt) and len(nxt) <= 360:
+                return nxt
+        return None
 
     def coverage(self, question: str, cid: int) -> float:
         """Share of the question's information (idf mass) that the passage and its context mention."""
@@ -503,6 +613,12 @@ class Answerer:
         elif len(txt) > 360:
             txt = self._best_sentences(question, txt)
         used = [cid]
+        if it.org and len(txt) > 200:
+            # a recognition: the sentence naming the organisation and how many times it has recognised us
+            sents = re.split(r"(?<=[.!?])\s+(?=[A-Z“\"])", c.text)
+            hits = [x for x in sents if it.org in x or ORDINAL_TIME_RE.search(x)]
+            if hits:
+                txt = " ".join(hits[:2])[:600]
         if DESCRIPTIVE_RE.search(question.strip()) and not (it.rate or it.fee or it.count_noun or it.hours):
             # a descriptive question: add the next-best passage from the same page
             for osc, ocid in ranked[:15]:
@@ -515,6 +631,11 @@ class Answerer:
                 txt = f"{txt} {extra}"
                 used.append(ocid)
                 break
+            # each quoted passage brings the sentence that refers back to it, so the facts stay with their entity
+            for u in list(used):
+                nxt = self._continuation(u, si)
+                if nxt and nxt not in txt:
+                    txt = f"{txt} {nxt}"
         return txt, used
 
     def _render_rows(self, rids: list[int]) -> str:
@@ -547,14 +668,13 @@ class Answerer:
 
     def _sources(self, used: list[int], ranked, si: int) -> list:
         s = self.s
-        sid = s.snapshots[si][0]
         out, seen = [], set()
 
         def add(cid):
             c = s.chunks[cid]
             if c.url not in seen and len(out) < 6:
                 seen.add(c.url)
-                out.append((c.url, sid, c.text[:200]))
+                out.append((c.url, s.view_sid(si, cid), c.text[:200]))
 
         for cid in used:
             add(cid)
@@ -589,4 +709,4 @@ class Answerer:
             return Result(REFUSAL_TEXT, confident=False)
         url = max(page_score, key=lambda u: (page_score[u], u))
         clean = url.split("?")[0]
-        return Result(f"You can find it here: {clean}", sources=[(clean, s.snapshots[si][0], None)])
+        return Result(f"You can find it here: {clean}", sources=[(clean, s.view_sid(si), None)])

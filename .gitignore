@@ -39,3 +39,6 @@ snapshots_zip/
 /snapshots
 results/
 *.zip
+
+# optional LLM check cache (BANKGPT_LLM_CHECK=1); never committed
+.llm_cache.json
