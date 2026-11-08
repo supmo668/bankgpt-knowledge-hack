@@ -225,7 +225,10 @@ product the sentence names too weakly for the strict match (one distinctive prod
 where some table key would match on that one word. For each such (sentence, quoted value, table row) pair it asks
 one question: is the sentence stating this row's fact, and does it give a different value? A "yes, yes" verdict
 adds a paragraph-vs-table conflict, resolved by the same currency rules, with "(matched to this fact by the
-optional LLM check)" in its reason. Pairs the rules decide never reach it, and answers never depend on it.
+optional LLM check)" in its reason. Pairs the rules decide never reach it, and answers never depend on it. As in
+the rules, a sentence that any candidate tier agrees with is not judged, and a paragraph repeated under several
+headings is never matched through a heading. At most 3 candidate rows are judged per sentence
+(`JUDGE_MAX_KEYS`); each request has a 30 s timeout and one retry, so a stalled network cannot hold the ingest.
 
     BANKGPT_LLM_CHECK=1     turn it on (unset or any other value: off, no import, no call)
     ANTHROPIC_API_KEY       the credential (only needed for pairs not yet in the cache)
@@ -235,7 +238,7 @@ optional LLM check)" in its reason. Pairs the rules decide never reach it, and a
 - **Repeatable.** Verdicts are cached by a sha256 of (prompt version, model, sentence, value, row), so a repeat run
   gives identical conflicts and answers and needs no network.
 - **Fails closed.** Any failure (package missing, no key, network, refusal, unparseable reply) is "no verdict": the
-  pair stays undecided and the deterministic result stands. A failed pair is tried once per process and is never
+  pair stays undecided and the deterministic result stands. A cache file or entry of the wrong shape is ignored. A failed pair is tried once per process and is never
   cached on disk, so a later run with a key judges it.
 - **Size on the kit data.** One distinct undecided pair across the five snapshots, so a flag-on run makes at most
   one model call. With the flag on and no usable key the scores are identical to the flag-off run (RESULTS.md).
