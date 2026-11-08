@@ -76,6 +76,8 @@ def hours_key_parts(key: str):
     return branch, day
 
 
+# caption words that make a different product of otherwise identical row labels
+CAPTION_QUALIFIERS = re.compile(r"\b(cash-out|home equity|jumbo|construction|interest-only|bridge)\b")
 FAMILY_RE = re.compile(r"(?i)\b(atv|snowmobile|jet ski|boat|rv|recreational|motorcycle loans? only|auto|vehicle)")
 
 
@@ -103,6 +105,13 @@ def row_key(c: Chunk) -> Optional[str]:
                        if w not in ("certificates", "certificate", "accounts", "account", "rates", "rate", "loans"))
         if cap and cap not in q:
             q = f"{cap} | {q}"
+    else:
+        # a self-describing row ("Refinance: 30-Year Fixed Conventional $300,000 or less") still belongs to its
+        # table's product: Home Loan, Cash-Out and Home Equity Refinance tables repeat the same row labels
+        cap = c.ctx.split(" > ")[-1].lower() if c.ctx else ""
+        quals = [w for w in CAPTION_QUALIFIERS.findall(cap) if w not in q]
+        if quals:
+            q = f"{' '.join(dict.fromkeys(quals))} | {q}"
     scope = "business" if "business" in c.url.lower() else "personal"
     if c.key_alias:
         fam = FAMILY_RE.search(f"{c.ctx} {c.url}")
