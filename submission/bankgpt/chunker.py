@@ -118,8 +118,12 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
     last_para_text = ""
     section = ""
     prev_short = False
-    tcount = 0
     pending_table: list[Chunk] = []
+
+    seen_tables: dict[str, int] = {}
+
+    def ctx_now() -> str:
+        return " > ".join(x for x in (head_ctx(), section, caption) if x)
 
     def head_ctx() -> str:
         return " > ".join(heads[k] for k in sorted(heads))
@@ -154,7 +158,7 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
         kv = KV_RE.match(txt)
         if kv and len(txt) <= 160:
             # "6-month certificate APY: 3.50%" / "Routing Number: 273974581" is a one-row fact table
-            chunks.append(Chunk(url, txt, ctx, "row", table=f"{url}#kv{len(chunks)}",
+            chunks.append(Chunk(url, txt, ctx, "row", table=f"{url}#kv:{txt[:80]}",
                                 cells={"Item": kv.group(1).strip(), "Value": kv.group(2).strip()}, ends=ends, links=links))
             last_para_text = txt
             return
@@ -183,8 +187,10 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
                 data_header = header
                 hdr = "Fee" if any("$" in h for h in header[1:]) else "Value"
                 header = ["Item"] + [hdr if k == 1 else f"{hdr} {k}" for k in range(1, len(header))]
-            tcount += 1
-            tkey = f"{url}#t{tcount}"
+            # content-based table key (context + header + occurrence), stable when tables are added above
+            sig = f"{ctx_now()}|{'|'.join(header)}"
+            seen_tables[sig] = seen_tables.get(sig, 0) + 1
+            tkey = f"{url}#{sig}#{seen_tables[sig]}"
             pending_table = []
             ctx = " > ".join(x for x in (head_ctx(), section, caption) if x)
             h0 = header[0].strip(" *") if header else ""
@@ -214,8 +220,9 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             # single-cell rows are sub-captions
             flush_para()
             flush_group()
-            tcount += 1
-            tkey = f"{url}#t{tcount}"
+            sig = f"{ctx_now()}|headerless|{s[:40]}"
+            seen_tables[sig] = seen_tables.get(sig, 0) + 1
+            tkey = f"{url}#{sig}#{seen_tables[sig]}"
             sub = ""
             while i < n and lines[i].strip().startswith("|"):
                 raw_cells = _split_row(lines[i])

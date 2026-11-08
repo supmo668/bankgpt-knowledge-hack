@@ -133,7 +133,9 @@ class Store:
             self.page_snaps[p.url] |= bit
             self.page_hash[(p.url, si)] = hash(p.markdown)
             for c in chunk_page(p.url, info.title, p.markdown):
-                key = (c.url, c.ctx, c.text)
+                # per-crawl attributes are part of the identity: an unchanged row whose table's effective
+                # date moved (or whose model-year rank / table changed) is a new version, not the old one
+                key = (c.url, c.ctx, c.text, c.table, c.effective, c.ends, tuple(sorted(c.key_alias.items())))
                 cid = self.key2id.get(key)
                 if cid is None:
                     cid = len(self.chunks)
