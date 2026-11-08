@@ -45,7 +45,9 @@ class BankKnowledge:
     def answer(self, question: str, as_of: Optional[str] = None) -> Answer:
         as_of = as_of or as_of_from_text(question)
         si = self.store.snapshot_for(as_of)
-        key = (" ".join(question.split()).lower(), si)
+        if si < 0:   # nothing ingested yet
+            return Answer(text="I don't know: no website snapshots have been loaded yet.", confident=False)
+        key = (" ".join(question.split()), si)   # exact wording: the entity gate reads capitalisation
         if key not in self._cache:
             self._cache[key] = self.answerer.answer(question, si)
         r = self._cache[key]
