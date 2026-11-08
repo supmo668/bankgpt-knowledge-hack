@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
-from .store import Store, row_values, values_disagree
+from .store import Store, hours_key_parts, row_values, values_disagree
 
 RATE_PAGE_KINDS = ("rate_sheet", "product", "landing", "calculator", "document", "home")
 ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"]
@@ -116,10 +116,9 @@ class ConflictFinder:
             product = wc.ctx.split(" > ")[-1] if wc.ctx else ""
             term = "".join(f" {n}-month" for n in re.findall(r"(\d+)\s*Months?", wc.text))
             topic = f"{product}: {label}{term}".strip(": ")
-            if key.startswith("hours | "):
-                _, branch, day = key.split(" | ", 2)
-                topic = f"{branch} hours: {day}"
-                label = topic
+            hk = hours_key_parts(key)
+            if hk:
+                topic = label = f"{hk[0]} hours: {hk[1]}"   # the label is the dedupe key: keep the branch in it
             # how the losing values lost: stale page in the same snapshot, or superseded by a later crawl
             same_snap_stale = any(si == latest and cid in s.shadowed.get(si, set())
                                   for v, occ in vmap.items() if v != wv for si, cid in occ)

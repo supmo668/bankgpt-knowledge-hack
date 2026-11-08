@@ -30,14 +30,42 @@ def _eff_date(s: Optional[str]) -> date:
 
 # Branch hours (fact family added for R8): see chunker.hours_cells.
 BRANCH_SCOPE_RE = re.compile(r"(?i)\b(branch|office|location|center)\b")
+# words that name no particular branch: "Branch Hours", "Locations", "Lobby and drive-up hours", a "Day" header
+GENERIC_SCOPE_RE = re.compile(r"(?i)\b(?:branch(?:es)?|offices?|locations?|centers?|hours|lobby|drive[- ]?(?:up|thru|through)|"
+                              r"our|and|days?|find)\b|&")
+HOURS_KEY = "hours | "
+
+
+def _scope_name(heading: str) -> str:
+    return re.sub(r"\s+", " ", GENERIC_SCOPE_RE.sub(" ", heading)).strip(" :-,").lower()
 
 
 def _branch_scope(c: Chunk) -> str:
-    """Which branch an hours row belongs to: the nearest heading naming a branch, else the page's first heading."""
+    """Which branch an hours row belongs to: the nearest heading naming a branch ("Main Street Branch"), else the
+    nearest specific heading ("## Downtown" on an index page). Generic words are dropped, so "Main Street Branch"
+    and "Main Street" are one branch, and a "## Branch Hours" heading names none."""
     parts = [x.strip() for x in (c.ctx or "").split(" > ") if x.strip()]
-    named = [x for x in parts if BRANCH_SCOPE_RE.search(x)]
-    scope = named[-1] if named else (parts[0] if parts else re.sub(r"^https?://[^/]+", "", c.url))
-    return re.sub(r"\s+", " ", re.sub(r"(?i)\bhours\b.*$", "", scope)).strip(" :").lower()
+    names = [(x, _scope_name(x)) for x in parts]
+    named = [n for x, n in names if n and BRANCH_SCOPE_RE.search(x)]
+    specific = [n for _, n in names if n]
+    return (named or specific or [re.sub(r"^https?://[^/]+", "", c.url).lower()])[-1]
+
+
+def _hours_col(c: Chunk, header: str) -> str:
+    """The service an hours column covers: lobby or drive-up, from the header or else the table's heading/caption."""
+    for text in (header, c.ctx or ""):
+        drive, lobby = re.search(r"(?i)drive", text), re.search(r"(?i)lobby", text)
+        if bool(drive) != bool(lobby):
+            return "drive-up" if drive else "lobby"
+    return header.lower()
+
+
+def hours_key_parts(key: str):
+    """('main street', 'monday-friday') for an hours fact key, else None."""
+    if not key.startswith(HOURS_KEY):
+        return None
+    branch, _, day = key[len(HOURS_KEY):].partition(" | ")
+    return branch, day
 
 
 FAMILY_RE = re.compile(r"(?i)\b(atv|snowmobile|jet ski|boat|rv|recreational|motorcycle loans? only|auto|vehicle)")
@@ -49,7 +77,7 @@ def row_key(c: Chunk) -> Optional[str]:
         return None
     if hours_cells(c):   # hours facts: one per (branch, day); the times are the values, not qualifiers
         day = re.sub(r"\s*-\s*", "-", re.sub(r"\s+", " ", next(iter(c.cells.values())).lower().replace("–", "-")))
-        return f"hours | {_branch_scope(c)} | {day.strip()}"
+        return f"{HOURS_KEY}{_branch_scope(c)} | {day.strip()}"
     quals = [c.key_alias.get(v, v) for k, v in c.cells.items()
              if not re.search(r"(?i)^min|minimum|payment", k) and v.strip().lower() not in ("none", "n/a", "na", "—", "-") and not VALUE_CELL_RE.search(v) or re.search(r"(?i)month|year|tier|\+|or less|–|-", v)
              and not re.search(r"%", v)]
@@ -96,7 +124,7 @@ def row_values(c: Chunk) -> tuple:
     """Value cells as (canonical column, numbers), so 6.000% == 6.00% and APR == Annual Percentage Rate."""
     hours = hours_cells(c)
     if hours:
-        return tuple(sorted((f"hours:{k.lower()}", (v,)) for k, v in hours.items()))
+        return tuple(sorted((f"hours:{_hours_col(c, k)}", (v,)) for k, v in hours.items()))
     vals = []
     for k, v in c.cells.items():
         if re.search(r"(?i)payment|min|points|tier|balance|amount|limit|example", k):

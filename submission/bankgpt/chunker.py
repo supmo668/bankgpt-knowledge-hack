@@ -9,16 +9,11 @@ from urllib.parse import urlparse
 
 from .text import MONTHS, clean_inline, offer_end, parse_date_line, year_range
 
-EFFECTIVE_RE = re.compile(r"effective (?:as of )?(\d{1,2}/\d{1,2}/\d{2,4}|[A-Za-z]{3,9}\.? \d{1,2},? \d{4})", re.I)
-
-
-def _eff_mdy(s: str) -> str:
-    """'April 6, 2026' -> '4/6/2026' (the M/D/YYYY form the store compares); other forms unchanged."""
-    m = re.match(r"([A-Za-z]{3,9})\.? (\d{1,2}),? (\d{4})$", s)
-    if not m:
-        return s
-    mon = MONTHS.get(m.group(1).lower()) or MONTHS.get(m.group(1).lower()[:3])
-    return f"{mon}/{int(m.group(2))}/{m.group(3)}" if mon else s
+EFFECTIVE_RE = re.compile(r"effective (?:as of )?(\d{1,2}/\d{1,2}/\d{2,4})", re.I)
+_MONTH = (r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|"
+          r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)")
+# "effective April 6, 2026": read for hours tables only, so rate tables keep their M/D/YYYY rule
+EFFECTIVE_MONTH_RE = re.compile(rf"effective (?:as of )?({_MONTH}\.? \d{{1,2}},? \d{{4}})\b", re.I)
 BOLD_LABEL_RE = re.compile(r"^\*\*([^*]{1,40})\*\*:?$")
 GENERIC_HEADER_RE = re.compile(r"(?i)^(term|terms?|account( type)?|certificate|program|card type|loan (program|amount|type)|"
                                r"ira type|privileges|product|type|balance( tier)?|rate|apr|apy|tier|amount|col\d*|"
@@ -26,6 +21,13 @@ GENERIC_HEADER_RE = re.compile(r"(?i)^(term|terms?|account( type)?|certificate|p
 KV_RE = re.compile(r"^([^:]{3,80}?):\s*(\$?\s?\d[\d,]*(?:\.\d+)?\s?%?(?:\s*(?:APY|APR))?)\s*(?:\([^)]*\))?\.?$", re.I)
 SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z“\"(])")
 NOISE_LINE_RE = re.compile(r"^(\* \* \*|---+|Loading locations\.\.\.|Go|Cancel|Continue.*Cancel|\d+ min read)$", re.I)
+
+
+def _eff_mdy(s: str) -> str:
+    """'April 6, 2026' / 'Sept. 8, 2026' -> '4/6/2026' (the M/D/YYYY form the store compares)."""
+    m = re.match(r"([A-Za-z]{3,9})\.? (\d{1,2}),? (\d{4})$", s)
+    mon = m and (MONTHS.get(m.group(1).lower()) or MONTHS.get(m.group(1).lower()[:3]))
+    return f"{mon}/{int(m.group(2))}/{m.group(3)}" if mon else s
 
 
 @dataclass
@@ -40,21 +42,33 @@ class Chunk:
     links: list = field(default_factory=list)
     key_alias: dict = field(default_factory=dict)  # qualifier cell -> canonical form (model-year tiers)
     ends: Optional[str] = None       # ISO date an offer says it ended / ends ("offer ended 2025-09-30")
+    hours_table: bool = False        # row of a table that carries opening hours (any row has a time range)
 
 
-# Branch hours (fact family added for R8, see NOTES.md): a row is an hours fact when a value cell is a time range or "Closed".
+# Branch hours (fact family added for R8, see NOTES.md): a row is an hours fact when a value cell is a time
+# range, or "Closed" in a table whose other rows have time ranges.
 _T = r"(?:\d{1,2}(?::\d\d)?\s?(?:a\.?m\.?|p\.?m\.?)?|noon)"
 HOURS_CELL_RE = re.compile(rf"(?i)^\s*(?:closed|{_T}\s?(?:-|–|—|to)\s?{_T})\s*\.?$")
-AMPM_RE = re.compile(r"(?i)\d\s?[ap]\.?m\b|noon|^\s*closed")
+AMPM_RE = re.compile(r"(?i)\d\s?[ap]\.?m\b|noon")
+TIME_TOKEN_RE = re.compile(r"(?i)(\d{1,2})(?::(\d\d))?\s?(?:([ap])\.?m\b\.?)?|(noon)")
+
+
+def norm_hours(v: str) -> str:
+    """'9 a.m. – 5 p.m.' and '9:00 AM to 5:00 PM' -> '9:00am-5:00pm'; 'Closed' -> 'closed'."""
+    if re.match(r"(?i)^\s*closed", v):
+        return "closed"
+    out = []
+    for m in TIME_TOKEN_RE.finditer(v):
+        out.append("12:00pm" if m.group(4) else f"{int(m.group(1))}:{m.group(2) or '00'}{(m.group(3) or '').lower() + 'm' if m.group(3) else ''}")
+    return "-".join(out)
+
 
 def hours_cells(c: Chunk) -> dict:
     """Value cells of an hours row (column -> normalised time range); empty when the row is not an hours fact."""
     if c.kind != "row" or len(c.cells) < 2:
         return {}
-    vals = list(c.cells.items())[1:]
-    out = {k: re.sub(r"[\s.]", "", v.lower()).replace("–", "-").replace("—", "-").replace("to", "-")
-           for k, v in vals if HOURS_CELL_RE.match(v)}
-    if not out or not any(AMPM_RE.search(c.cells[k]) and "closed" not in c.cells[k].lower() for k in out):
+    out = {k: norm_hours(v) for k, v in list(c.cells.items())[1:] if HOURS_CELL_RE.match(v)}
+    if not out or not (c.hours_table or any(AMPM_RE.search(c.cells[k]) for k in out)):
         return {}
     return out
 
@@ -240,6 +254,9 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
                 pending_table.append(c)
                 chunks.append(c)
             _alias_year_tiers(pending_table)
+            if any(hours_cells(c) for c in pending_table):
+                for c in pending_table:
+                    c.hours_table = True
             prev_short = False   # the next short line captions the next table; it is not a section
             continue
         if s.startswith("|") and s.count("|") >= 2 and not (i + 1 < n and re.match(r"^\s*\|?\s*:?-{3,}", lines[i + 1])):
@@ -286,9 +303,8 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             i += 1
             continue
         if pending_table:
-            em = EFFECTIVE_RE.search(s)
-            if em and _eff_mdy(em.group(1)) != em.group(1) and not any(hours_cells(c) for c in pending_table):
-                em = None   # month-name dates ("effective April 6, 2026") are read for hours tables only
+            em = EFFECTIVE_RE.search(s) or (
+                EFFECTIVE_MONTH_RE.search(s) if any(c.hours_table for c in pending_table) else None)
             if em:
                 for c in pending_table:
                     c.effective = c.effective or _eff_mdy(em.group(1))
