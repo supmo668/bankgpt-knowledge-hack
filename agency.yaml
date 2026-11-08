@@ -1,0 +1,516 @@
+# AI-RDLC instance configuration — copy to your repo root as `agency.yaml` and edit.
+#
+# This is the ONLY file you customize per repo. The plugin ships the framework;
+# everything project-specific is read from here through `tools/config`.
+#
+# Read a value:   <plugin>/tools/config get quality.review_confidence_threshold
+# Resolve $USER:  <plugin>/tools/config get-principal
+
+# ── Principals ────────────────────────────────────────────────────────────
+# Map each contributor's system $USER to a stable principal identity. The
+# framework never hardcodes names; it resolves them here. `name` is the slug
+# used for sandbox/handoff paths under <sandbox_root>/<name>/.
+principals:
+  node:
+    name: supmo668
+    display_name: "supmo668"
+    address:
+      informal: "supmo668"
+    platforms:
+      github:
+        - username: supmo668
+  # alice:                       # system $USER
+  #   name: alice                # principal slug (sandbox dir, addressing)
+  #   display_name: "Alice Example"
+  #   address:
+  #     informal: "Alice"
+  #   platforms:
+  #     github:
+  #       - username: alice-gh
+  #         repos:
+  #           - org: your-org
+  #             repo: your-repo
+  default: unknown               # fallback principal when $USER is unmapped
+
+# ── Project ───────────────────────────────────────────────────────────────
+project:
+  name: "bankgpt-knowledge-hack"
+  timezone: "UTC"
+  # Monorepo app modules. Each becomes a workstream + a worktree (one worktree
+  # agent per module) when you run `/airdlc-init-monorepo`. Leave empty for a
+  # single-app repo. Populated by init-monorepo; safe to edit by hand.
+  modules: []                  # e.g. ["web", "api", "mobile"]
+
+# ── Plugin source (autonomous feedback loop) ──────────────────────────────────
+# The plugin runs from a READ-ONLY install cache (${CLAUDE_PLUGIN_ROOT}), so an
+# agent can't fix the framework there. Point this at your local, EDITABLE airdlc
+# plugin source repo so `/feedback` becomes autonomous: filed feedback is
+# dispatched and an airdlc agent addresses it AT the source (edit → test →
+# /cto-release). Leave empty if you don't maintain the plugin — `/feedback` then
+# just logs locally. Prompted at `/cto-init`.
+plugin:
+  source_path: ""              # e.g. "/Users/you/github/airdlc" (an editable git checkout)
+  maintainer_address: ""       # /feedback dispatch target; empty = derived: <source repo>/<principal>/cto
+
+# ── Paths (externalized — no hardcoded usr/ assumption) ─────────────────────
+paths:
+  sandbox_root: ".claude/usr"          # per-principal local AI sandboxes (gitignored): <sandbox_root>/<name>/
+  worktree_base: "worktrees"           # git worktrees of modules/submodules: worktrees/<module>
+                                       # (branch == <module>); gitignored.
+  staging_worktree: "worktrees/staging"  # ephemeral integration worktree for /staging-preview
+                                       # (trunk + all pending worktree work); rebuilt each run.
+  workstreams_root: "workstreams"      # workstream artifacts, receipts, dispatches
+  workstream_context: ".claude/workstreams"  # committed per-workstream context/state
+                                       # index (context.json): pointers to Linear/gh/
+                                       # commit/QGR + per-phase status.
+
+# ── Framework version tracking ──────────────────────────────────────────────
+framework:
+  version: "0.90.1"
+
+# ── Agent defaults ──────────────────────────────────────────────────────────
+agents:
+  # launch_command: "claude --agent {agent} -p {prompt}"   # how tools/agent-wake starts an
+                                  #   idle agent's headless session ({agent}/{prompt} substituted).
+                                  #   Override if your repo wraps the CLI.
+  # <agent-name>:                 # per-agent wake opt-in, e.g.
+  #   wake_on_dispatch: true      #   web: { wake_on_dispatch: true }
+  default_model: "opus"          # subagents run on this unless overridden
+
+# ── Quality gate ────────────────────────────────────────────────────────────
+# Commands are project-specific; the gate shells out to whatever you declare.
+# Leave a command empty ("") to skip that check.
+quality:
+  block_on_secrets: true
+  block_on_console_log: false
+  review_confidence_threshold: 80      # findings below this are filtered (unified — was 50/80)
+  format_command: ""                   # e.g. "pnpm exec oxfmt --check ."
+  lint_command: ""                     # e.g. "pnpm exec oxlint"
+  typecheck_command: ""                # e.g. "pnpm exec tsc --noEmit"
+  test_command: ""                     # e.g. "pnpm exec jest"
+  tests_required: true                 # empty test_command STOPS the gate rather than
+                                       # skipping it. false waives tests deliberately —
+                                       # and the waiver is reported on every gate.
+  # Definition of Done (Scrum) — the explicit, shared statement of what "complete"
+  # means, checked at /phase-complete by tools/dod-check. Recognised MECHANICAL
+  # keys are verified automatically (qg-receipt, docs-ticket-linked, ticket-linked,
+  # tests-pass); anything else is carried verbatim as an ATTEST item the agent must
+  # answer out loud at sign-off. Unset = the industry baseline. Phrases are fine —
+  # items are comma-separated, not word-separated.
+  definition_of_done: []               # e.g. ["qg-receipt", "docs-ticket-linked",
+                                       #       "ticket-linked", "tests-pass",
+                                       #       "code-reviewed", "no-known-regressions",
+                                       #       "rollback-known", "WCAG AA checked"]
+  rereview:                            # adaptive re-review thresholds (P3)
+    size_lines: 200                    # post-fix diff >= this ⇒ heavy re-review
+    size_files: 10                     # post-fix files  >= this ⇒ heavy re-review
+    critical_globs: []                 # e.g. ["tools/git-*", "hooks/*"] — always heavy
+
+# ── CI/CD gating layer (DevEx-owned) ─────────────────────────────────────────
+# The gating-layer contract: what runs at each stage and where. DevEx authors
+# the CI pipeline from this; cost lives left (commit/push), trust lives right
+# (CI/CD). `receipt-verify` re-checks the QGR receipt server-side — forge-enforced.
+cicd:
+  provider: "github-actions"
+  gates:
+    commit: ["hookify"]                                      # fast local guard rails
+    push:   ["lint", "unit"]                                 # cheap pre-push
+    ci:     ["lint", "typecheck", "test", "receipt-verify"]  # server-side QG mirror
+    cd:     ["ci-green", "receipt-verify"]                   # deploy only on green CI + valid receipt
+  # Long-running deploy completion watchdog (tools/deploy-watchdog). All optional
+  # and PROVIDER-DECOUPLED — you supply the probe commands; absent ones are skipped
+  # (no probes at all → watchdog is a documented no-op). See REFERENCE-WATCHDOG.md.
+  deploy:
+    # The deploy ACTION. Same PROVIDER-DECOUPLED contract as the probes below:
+    # you supply the command. `flyctl deploy`, `vercel deploy --prod`,
+    # `render deploys create`, `kubectl apply -f k8s/` are all just commands.
+    # Resolution order in /deploy: this command → tools/deploy-<providers.deploy>
+    # → a connected provider MCP. Empty and no tool and no MCP → /deploy reports
+    # the capability unconfigured and stops. It never guesses a platform.
+    deploy_command: ""            # e.g. "flyctl deploy --remote-only"; $AIADLC_DEPLOY_ENV is exported
+    verify_command: ""            # success oracle: exit 0 once prod is verified green
+    status_command: ""            # optional: prints success|failed|running (early hard-fail)
+    runner_health_command: ""     # optional: exit 0 == self-hosted runner/host healthy
+    recover_command: ""           # optional: self-heal a downed LOCAL runner (e.g. docker restart)
+    timeout_seconds: 2400         # hard deadline (≥ the deploy's realistic max runtime)
+    poll_seconds: 120             # recommended ScheduleWakeup re-tick interval
+    # ── Land→deploy hand-off + promotion gate (all optional; absent = no-op) ──
+    default_env: ""               # env the CTO trunk deploys to; /pr-cto-land Step 10 carries it in the ship hand-off
+    auto_deploy: {}               # CD topology: <branch>: <env> a PUSH to <branch> deploys on its own, e.g. { test: test, main: prod }.
+                                  #   tools/ship-handoff then VERIFIES that deploy instead of dispatching DevEx to fire a second one.
+    deployed_commit_command: ""   # prints the SHA currently deployed to $AIADLC_DEPLOY_ENV; read by tools/promote-precheck
+                                  #   (the probe the promote gate compares against — e.g. curl a /meta deployed_commit)
+    promote_from: {}              # promotion topology: <env>: <source-env> that must already run+be-green on a SHA
+                                  #   before <env> deploys it. e.g. { production: test }. /deploy blocks on the gate.
+  # DB-migration surfacing (tools/migration-delta) — flags migrations a branch adds
+  # so a schema-at-head boot failure becomes a checklist item at /pr-submit + /pr-cto-land.
+  migrations:
+    path: ""                      # glob/dir of migration files (e.g. "alembic/versions"); empty = feature off
+  # Prod promotion (/prod-promote) — promote the tested trunk to prod after human QA,
+  # gated on promote-precheck, then batch-retire the worktrees now in prod.
+  promote:
+    from_branch: ""               # the tested trunk to promote FROM (e.g. "test"); empty → prompt
+    to_branch: ""                 # the prod branch to promote TO (e.g. "main"); empty → prompt
+    source_env: ""                # env whose deploy must == <from_branch> & be green before promoting (e.g. "test")
+    to_env: ""                    # env the prod branch deploys to (e.g. "prod"); no default — empty = prompt
+
+# ── Staging integration surface (/staging-preview + /staging-land) ────────────
+# The ephemeral worktree that amasses ALL active worktree work onto fresh trunk
+# for one combined local UI QA; local QA PASS lands the contributors.
+staging:
+  branch: "staging"               # throwaway integration branch name
+  preview_command: ""             # local UI/dev command run in the staging worktree (e.g. "pnpm dev");
+                                  #   empty = the CTO reports the staging path and you start the preview yourself
+
+# ── Product impact rubric (/create, and the loops' next-unit choice) ──────────
+# The computed answer to "what do we build next?". Scored 1-5 on reach/impact/
+# confidence/fit/effort, then a CLASS MULTIPLIER decides the contest: refinement is
+# favoured, so a net-new feature must out-score it by >20% AND cite evidence.
+# Creation below the confidence floor is BLOCKED outright, not merely ranked low.
+product:
+  rubric:
+    refine_multiplier: 1.2        # refinement scores ×1.2 (the 120% side)
+    create_multiplier: 1.0        # creation scores ×1.0  (the 100% side)
+    min_score: 60                 # 0-100 floor to qualify at all
+    creation_confidence_floor: 4  # 1-5; a creation below this is blocked ("strictly rationalized")
+    weights:                      # relative weight of each dimension
+      reach: 1.0
+      impact: 1.5
+      confidence: 1.0
+      fit: 1.5                    # alignment with the stated <focus>
+      effort: 1.0                 # inverse-scored: 5 = cheap
+
+# ── Time-boxed coordinator loops (tools/cycle-engine) ─────────────────────────
+# One block per loop LABEL, named <coordinator>-loop. The engine is shared; each
+# loop skill supplies its own playbook — `cto-loop` is /cto-loop (eng:
+# land-to-staging), and `ceo-loop` would back a business-lane loop. Overridable
+# per-invocation (`/cto-loop <duration> <frequency>`). Standing authorizations
+# (land-to-staging, auto-deploy) are declared ONCE at arm-time, recorded in state.
+cycle:
+  cto-loop:
+    default_duration: "12h"       # window when /cto-loop is called with no duration
+    default_frequency: "1h"       # iteration interval when called with no frequency
+  ceo-loop:                       # the business-lane loop (/ceo-loop), same engine
+    default_duration: "12h"       # window when /ceo-loop is called with no duration
+    default_frequency: "1h"
+  # Pre-rename keys (cycle.nightbuild.* / nightbuild.*) are still read as
+  # back-compat aliases for cto-loop; prefer the names above for new configs.
+
+# ── Development docs (in-flight dev-doc propagation) ──────────────────────────
+# Where in-flight development docs go. The phase-complete boundary (re)generates
+# a per-workstream LOCAL dev doc + index (the floor); the iteration boundary
+# appends a local dev-log line. When provider=notion, the CTO additionally
+# mirrors the doc to a Notion "Developer Documentation" page under
+# docs.notion.parent (CTO-only MCP write — worktree agents never write Notion).
+# This in-flight Developer-Documentation tier is DISTINCT from the completed-
+# system reference tier written only at /plan-complete. Read by tools/docs-plan.
+docs:
+  provider: "notion"             # notion (default) | none — HACP documentation store; local tree always written
+  root: "docs"                   # local docs tree; per-ws doc → <root>/workstreams/<ws>.md
+                                 # indexed by <root>/workstreams/index.md
+  # HACP — agent→human is the bottleneck, and it is bandwidth. A hand-off points
+  # at the index and nothing else; the rest is REACHED from it, by section tag.
+  # reference/REFERENCE-HACP.md
+  wiki_root: ""                  # the L0 index page (URL or path). Empty = no wiki
+  hacp_sections: [vision, design, build, eval, risk, release, decision]
+  notion:
+    # root: set PER PERSON in ~/.aiadlc/user.yaml, not here:
+    #   docs:
+    #     notion:
+    #       root: "<your HACP root page id>"   # a pasted URL is normalised to its id
+    #       home: "<project>"    # optional: the project whose five lifecycle roots
+    #                            # are the index's default view
+    # Under the root: ONE HACP index database, rows namespaced by a Project column,
+    # project-first: project Index -> subproject Index -> documents.
+    project: ""                  # this repo's namespace (default: project.name / repo dir)
+    subproject: ""               # optional lane/application documents index under
+                                 # (e.g. set per module worktree in a monorepo)
+    parent: ""                   # Notion parent page (title/id) for Developer Documentation
+                                 # pages; the fallback when no per-agent scope matches
+                                 # (blank + no scope → local index only)
+    scopes: {}                   # per-agent Notion sub-workspace scopes: <agent>: <parent page>
+                                 # e.g. { web: "Web Docs", api: "API Docs" } — docs-plan resolves
+                                 # the current agent's scope first, then falls back to parent
+  # ── Usage docs (what the user can DO) — the tier the TICKET must stay aligned
+  # with. Distinct from the dev docs above (how it WORKS): different artifact,
+  # different audience. Only user-facing work owes one; tools/docs-ticket-align
+  # checks that the doc has not fallen behind the code it describes.
+  usage_root: ""                # default <docs.root>/usage — per-workstream usage docs
+  # notion:
+  #   usage_parent: ""          # Notion parent for USAGE pages; falls back to docs.notion.parent
+
+
+# ── Sealed-referee TDD (P2) ───────────────────────────────────────────────────
+tests:
+  sealed_dir: "tests/sealed"           # challenge suite root; test-seal hook blocks
+                                       # all agents except test-author/referee from reading it
+  referee_command: ""                  # how `referee` runs the sealed suite; emits
+                                       # per-test "RESULT pass|fail|skip <category>" (or TAP) lines,
+                                       # plus a declared count: "PLAN <n>" or TAP's "1..<n>".
+  plan_required: true                  # refuse to sign without that count. The normaliser is an
+                                       # allowlist, so an unrecognised line is DROPPED — and a
+                                       # dropped result is indistinguishable from a test that never
+                                       # existed. Only the declared count notices. false = sign
+                                       # without the guarantee (say so on purpose).
+                                       # Empty = sealed-referee TDD disabled.
+  # Per-module overrides (monorepo): referee_command_<module> is resolved first;
+  # falls back to the global referee_command above when absent.
+  # Mirrors quality.lint_command_<agent> / quality.test_command_<agent> convention.
+  # referee_command_web: "pnpm exec vitest run --reporter=tap"
+  # referee_command_api: "pytest tests/sealed/ -q --tb=no"
+
+# ── Review fan-out ──────────────────────────────────────────────────────────
+review:
+  reviewers: ["code", "security", "design", "test"]   # canonical roster
+  profile: "standard"                  # "research": reviewer-code only, no scorer
+  scorer_model: "opus"                 # reconciled — opus everywhere
+
+# ── Methodology ──────────────────────────────────────────────────────────────
+methodology:
+  numbering: "phase.iteration"
+  work_pattern: "discuss-plan-review-revise-finalize-implement"
+  strictness: "standard"        # strict | standard | relaxed — the adjustable system
+                                # parameter for inner-loop boundary rigor (hand-off
+                                # dispatch, receipt-chain, phase Y/N default). Read via
+                                # tools/strictness. Landing gates are NEVER relaxed.
+
+# ── ISCP (inter-agent messaging) ──────────────────────────────────────────────
+iscp:
+  # SQLite DB lives OUTSIDE git, keyed by repo name. {repo} is substituted.
+  db_path_template: "~/.aiadlc/{repo}/iscp.db"
+
+# ── Coordination ──────────────────────────────────────────────────────────
+# Cross-coordinator behavior shared by the CTO and any peer coordinators.
+# ── Dispatch delivery (wake-on-dispatch — aiadlc-feedback 2026-08-14 §7) ──────
+# Dispatch is a PULL system: an agent with no live session never sees its inbox.
+# These make delivery visible and, optionally, active.
+dispatch:
+  wake_priority: "high"           # auto-wake an IDLE recipient at/above this priority
+                                  #   (any | normal | high | urgent). Requires the
+                                  #   per-agent opt-in below. `--wake` overrides always.
+  stale_unread_hours: 4           # blocker-sweep flags any dispatch unread longer than
+                                  #   this, fleet-wide, as PARKED (0 = disable)
+
+coordination:
+  blocker_interval: 900          # seconds between blocker-sweep heartbeats (default
+                                 # 900 = 15 min). Each coordinator runs
+                                 # tools/blocker-sweep on this cadence to ensure its
+                                 # own agents' blockers are being cleared. See the
+                                 # `blocker` monitor in monitors lists below.
+  # cto_build_subagents: "web api mobile"   # extra sub-agent types the
+                                 # cto-no-build-subsession hook blocks a COORDINATOR
+                                 # from spawning (build/write), on top of the built-in
+                                 # set (general-purpose, claude, worktree-agent,
+                                 # test-author). Add your module worktree-agent names
+                                 # so a coordinator delegates build to a worktree
+                                 # SESSION + lands the QGR handoff, never builds via a
+                                 # sub-agent. reviewer-*/Explore/Plan stay allowed.
+
+# ── CTO coordination ──────────────────────────────────────────────────────
+cto:
+  branch: "main"                 # the branch the coordination agent lives on
+  monitors: ["dispatch", "issue", "blocker"]  # background monitors the CTO starts on launch
+  # protected_branches: ""       # space/comma/newline list of branches non-CTO agents cannot
+                                 # write (checkout/switch/push). Default when unset: cto.branch
+                                 # + "main master". Cannot be bypassed with AIRDLC_ALLOW_RAW=1.
+                                 # The CTO role is always exempt. Unresolved agent role → allow
+                                 # (fail-open; safe for framework-dev repos without agency.yaml).
+  # Per-submodule trunk overrides (monorepo only): tools/module-context resolves
+  # these before the submodule's own origin/HEAD and the global cto.branch.
+  # Used so diff-hash and receipt-sign bind to the correct trunk for each submodule
+  # agent, preventing receipt rot when the parent monorepo trunk advances.
+  # Naming: cto.branch_<module>  where <module> is the submodule basename / agent slug.
+  # branch_api: "develop"        # e.g. api submodule tracks `develop` not `master`
+  # branch_web: "main"
+
+# ── Push / branch naming (opt-in) ─────────────────────────────────────────────
+# git:
+#   push:
+#     # User-namespace for PUSHED branches (multi-user forks): a local branch <b>
+#     # is pushed to origin as <namespace>/<b>, so contributors' same-named agent
+#     # branches (e.g. two people's `backend`) never collide on the remote. LOCAL
+#     # branch names stay BARE — the worktree/agent invariant requires
+#     # branch == agent name. `gh pr create` follows the namespaced upstream that
+#     # git-push sets, so the PR head is namespaced automatically.
+#     #   "<string>"   → that literal namespace (e.g. "alice")
+#     #   true         → the principal slug (per-user; the multi-user default)
+#     #   unset/false  → OFF: push the bare branch name (default — no change)
+#     namespace: true
+
+# ── Multi-coordinator fleet (MC-a — opt-in) ───────────────────────────────────
+# Peer coordinators under ONE principal, each owning a domain + its worktree
+# fleet, WITHOUT breaking the single-trunk-writer invariant: exactly one
+# coordinator carries trunk_writer: true (lands ALL PRs to the trunk); every
+# peer carries defers_landing_to and dispatches finished domain branches UP.
+# Domains must not overlap (mutual exclusivity: every path — and every worktree
+# agent — has exactly ONE owning coordinator, chosen at
+# `/worktree-create --coordinator <role>` and recorded in .aiadlc-coordinator).
+# Peers live on
+# their OWN branch, not the trunk. When this map is present, the legacy cto.*
+# keys resolve from coordinators.cto.* automatically. Validate with
+# tools/coordinator validate.
+# coordinators:
+#   cto:
+#     branch: "master"
+#     domain: "apps/eng/**"
+#     monitors: ["dispatch", "issue", "blocker"]
+#     trunk_writer: true
+#   ceo:
+#     branch: "business"
+#     domain: "apps/business/**"      # peer owns its domain’s worktrees only
+#     monitors: ["dispatch", "blocker"]
+#     defers_landing_to: "cto"        # blocker escalations flow UP to the cto
+coordinators:
+  cto:                              # engineering — single trunk writer
+    branch: "main"
+    domain: "apps/eng/**"
+    monitors: ["dispatch", "issue", "blocker"]
+    trunk_writer: true
+  ceo:                              # business domain — runs /define for business
+    branch: "business"              #   workstreams; never lands the trunk
+    domain: "apps/business/**"
+    monitors: ["dispatch", "blocker"]
+    defers_landing_to: "cto"
+
+# ── Autonomy (P5) ─────────────────────────────────────────────────────────────
+autonomy:
+  mode: "autonomous"             # autonomous (default) | supervised. autonomous: people
+                                 # see the PRD→design blueprint, credential asks and the
+                                 # L2 usage review (human-QA); QG/receipts still run.
+                                 # supervised adds phase/plan/pvr principal approvals.
+
+# ── Notifications (P5/P6) ─────────────────────────────────────────────────────
+# Communication is likewise a surface the framework writes to, so Slack is the
+# shipped reference — DEFAULT ON PURPOSE, and already opt-in (enabled: false).
+# tools/notify owns the send; a webhook bypasses the MCP (except approvals routed
+# to a separate approvals_channel, which the webhook's channel cannot reach).
+notifications:
+  slack:
+    enabled: false
+    channel: ""                  # e.g. "#airdlc-qa" — target for human-QA hand-offs
+    approvals_channel: ""        # optional; `action` posts (decisions, blockers, the
+                                 # /cto-loop human-action rollup) go here; unset = channel
+    webhook: ""                  # optional incoming-webhook URL; if set, tools/notify
+                                 # POSTs directly (else the skill sends via Slack MCP)
+
+# ── Agent-to-human updates (HACP family — reference/REFERENCE-HACP-WRITING.md) ────────────
+status_update:
+  interim:
+    on_iteration_complete: false # true: /iteration-complete refreshes the phase's Notion page
+  hold_until: ""                 # a gate id / page / date; milestone drafts wait for it
+  slack_channels: []             # channel IDs that are principal-only, e.g. ["C0123ABCD"]
+  slack_guard: "block"           # block | warn | off — agents never post to the audience
+  tracker: ""                    # experiment tracker for run health; no default
+  overlays: {}                   # <project>: {skill, templates, tracker, reader}
+
+# ── Observability (P6) ────────────────────────────────────────────────────────
+observability:
+  logfire:
+    enabled: false               # Claude SESSION tracing (not the app/dev stack) via the
+                                 # pydantic logfire-session-capture plugin. LOGFIRE_TOKEN /
+                                 # LOGFIRE_BASE_URL are fetched from the secrets provider by
+                                 # /cto-init and written to ~/.bashrc.
+  app:                           # APP/PROD observability (DevEx-owned) — distinct from logfire's session tracing
+    sentry:     { enabled: true,  dsn_secret: "SENTRY_DSN" }   # errors + releases via the Sentry MCP
+    prometheus: { enabled: false, alerts: [] }                 # alert rules (Fly metrics / Prometheus)
+
+# ── Issues (proof-of-work audit trail) ────────────────────────────────────────
+issues:
+  # DEFAULT ON PURPOSE — do not null this out. Ticketing is a surface the framework
+  # writes its OWN output to, so the lifecycle needs somewhere to file. That earns a
+  # default (unlike providers.*, which name YOUR stack and must never guess), and the
+  # default is earned because `github` is a real implementation: tools/to-issue FILES
+  # github issues directly. See CLAUDE.md, "Two kinds of knob".
+  provider: "github"             # legacy: backs tools/agency-issue (friction/bug filing)
+  tracker: "linear"             # /to-issue routing: linear | github | both | paperclip (P4)
+  # paperclip — the lifecycle lives in Paperclip issues (a workstream parent with
+  # define/design/build/land children). lifecycle-sync then prints the Paperclip
+  # grammar, and hookify blocks every linear-* skill and Linear MCP tool for every
+  # role (not escapable). Uncomment and fill in:
+  # paperclip:
+  #   api_url: "http://127.0.0.1:3100"   # the Paperclip instance the plugin tools talk to
+  #   company_id: ""                     # the company that owns the lifecycle issues
+  github:
+    target_repo: ""              # "org/repo" where issues are filed (blank = current repo)
+  linear:
+    # The linear-* skill suite (CTO-only) consumes team/project/initiative to map
+    # Workstream→Initiative, Plan→Project, Phase→Milestone, Iteration→Issue and
+    # writes the resulting URLs back into .claude/workstreams/<ws>/context.json.
+    team: ""                     # Linear team name or key (required when tracker includes linear)
+    project: ""                  # optional Linear project name to file phase issues under
+    initiative: ""               # optional Initiative name override (default: derived from workstream)
+    # ── Lifecycle-label taxonomy (P7) ──────────────────────────────────────
+    # Map canonical slugs to workspace label names. Unset slugs default to the
+    # slug string itself (identity default — no config needed for default names).
+    # Read by tools/linear-label; written only by the CTO via P7b skill suite.
+    labels: {}
+    # Examples (uncomment and edit to match your Linear workspace):
+    #   labels:
+    #     agent-ready: "Agent Ready"
+    #     human-ready: "Needs Human"
+    #     blocked: "Blocked"
+    #     brainstorm-ready: "Brainstorm Ready"
+    #     design-ready: "Design Ready"
+    #     plan-ready: "Plan Ready"
+    #     build-ready: "Build Ready"
+    #     land-ready: "Land Ready"
+    #     ship-ready: "Ship Ready"
+    #     user-facing: "User Facing"
+    #     qa-required: "QA Required"
+    user_facing_paths: []        # glob patterns that mark a PR as user-facing (P7c QA gate)
+    # Examples: ["src/ui/**", "public/**", "app/components/**"]
+    qa_required: true            # require human QA hold for user-facing PRs before landing (P7c)
+    stale_window_days: 7         # agent-ready Issues with no activity past this many
+                                 # days are flagged as stale by /linear-audit (P7d)
+    iteration_sync: false        # true = ALSO housekeep Linear at each /iteration-complete
+                                 # (CTO posts the iteration comment to the phase's Linear
+                                 # issue via the boundary dispatch). Default false: iteration
+                                 # syncs GitHub only; Linear stays phase-granularity.
+
+# ── Instincts (memory / learning loop) ────────────────────────────────────────
+instincts:
+  enabled: true
+  store_dir: ".aiadlc/instincts"        # confidence-scored learned patterns
+  ttl_days: 30                          # entries decay if not reinforced
+  min_confidence: 0.6                   # surface only above this at SessionStart
+
+# ── Spend (the meter behind the loops' declared cap) ──────────────────────────
+# /ceo-loop and /cto-loop arm with a cap and promise to stop at it. Without a
+# meter that promise is a string compared against nothing, and "spend-to-date"
+# in the hourly ledger is an estimate that reads exactly like a measurement.
+spend:
+  enabled: true
+  store_path: ".aiadlc/spend.json"      # crash-atomic ledger for the open window
+  default_cap_usd: 25                   # used by `spend check` when --cap is omitted
+
+# ── /v2r-loop (the third lane: one vision -> a reviewed branch) ───────────────
+# The register is the worklist that owns every build-unit transition. Nothing
+# else may change a unit's state, which is what lets the body run unattended:
+# the agent that writes the code is never the thing that decides the code works.
+v2r:
+  store_path: ".aiadlc/v2r/register.json"   # crash-atomic worklist + run records
+  # Ceilings are declared per run at the Stage 2 gate and live IN the register,
+  # not here — they are a property of the approval, not of the repo. A declared
+  # max_spend_usd requires tools/spend; an unmetered cap is not a cap.
+
+# ── Providers (extension points — plugin ships the contract, you supply impl) ──
+# Capabilities are FUNCTIONS, not vendors — map your own tool onto the function.
+# Every provider is optional and every one defaults to null. Null/blank means
+# "not configured"; the relevant skill reports the capability as unavailable
+# rather than fail. Run /provider-map to set these; it is a step in /airdlc-init.
+providers:
+  secrets: null                 # e.g. "infisical", "doppler", "vault" — your tools/secrets-<provider>
+  deploy: null                  # e.g. "fly", "vercel", "render" — run /provider-map to set
+  db: null
+  frontend: null
+  gateway: null
+  dns: null
+  preview: null                 # e.g. "docker-compose"
+  design: null                  # e.g. "figma"
+  terminal: null                # e.g. "ghostty"
+
+# ── Collaboration (cross-repo dispatch channels — optional) ───────────────────
+collaboration:
+  auto_sync: false
+  news_expiry_days: 7
+  repos: {}
