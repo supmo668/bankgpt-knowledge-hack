@@ -7,9 +7,18 @@ from datetime import date
 from typing import Optional
 from urllib.parse import urlparse
 
-from .text import clean_inline, offer_end, parse_date_line, year_range
+from .text import MONTHS, clean_inline, offer_end, parse_date_line, year_range
 
-EFFECTIVE_RE = re.compile(r"effective (?:as of )?(\d{1,2}/\d{1,2}/\d{2,4})", re.I)
+EFFECTIVE_RE = re.compile(r"effective (?:as of )?(\d{1,2}/\d{1,2}/\d{2,4}|[A-Za-z]{3,9}\.? \d{1,2},? \d{4})", re.I)
+
+
+def _eff_mdy(s: str) -> str:
+    """'April 6, 2026' -> '4/6/2026' (the M/D/YYYY form the store compares); other forms unchanged."""
+    m = re.match(r"([A-Za-z]{3,9})\.? (\d{1,2}),? (\d{4})$", s)
+    if not m:
+        return s
+    mon = MONTHS.get(m.group(1).lower()) or MONTHS.get(m.group(1).lower()[:3])
+    return f"{mon}/{int(m.group(2))}/{m.group(3)}" if mon else s
 BOLD_LABEL_RE = re.compile(r"^\*\*([^*]{1,40})\*\*:?$")
 GENERIC_HEADER_RE = re.compile(r"(?i)^(term|terms?|account( type)?|certificate|program|card type|loan (program|amount|type)|"
                                r"ira type|privileges|product|type|balance( tier)?|rate|apr|apy|tier|amount|col\d*|"
@@ -31,6 +40,23 @@ class Chunk:
     links: list = field(default_factory=list)
     key_alias: dict = field(default_factory=dict)  # qualifier cell -> canonical form (model-year tiers)
     ends: Optional[str] = None       # ISO date an offer says it ended / ends ("offer ended 2025-09-30")
+
+
+# Branch hours (fact family added for R8, see NOTES.md): a row is an hours fact when a value cell is a time range or "Closed".
+_T = r"(?:\d{1,2}(?::\d\d)?\s?(?:a\.?m\.?|p\.?m\.?)?|noon)"
+HOURS_CELL_RE = re.compile(rf"(?i)^\s*(?:closed|{_T}\s?(?:-|–|—|to)\s?{_T})\s*\.?$")
+AMPM_RE = re.compile(r"(?i)\d\s?[ap]\.?m\b|noon|^\s*closed")
+
+def hours_cells(c: Chunk) -> dict:
+    """Value cells of an hours row (column -> normalised time range); empty when the row is not an hours fact."""
+    if c.kind != "row" or len(c.cells) < 2:
+        return {}
+    vals = list(c.cells.items())[1:]
+    out = {k: re.sub(r"[\s.]", "", v.lower()).replace("–", "-").replace("—", "-").replace("to", "-")
+           for k, v in vals if HOURS_CELL_RE.match(v)}
+    if not out or not any(AMPM_RE.search(c.cells[k]) and "closed" not in c.cells[k].lower() for k in out):
+        return {}
+    return out
 
 
 @dataclass
@@ -261,9 +287,11 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             continue
         if pending_table:
             em = EFFECTIVE_RE.search(s)
+            if em and _eff_mdy(em.group(1)) != em.group(1) and not any(hours_cells(c) for c in pending_table):
+                em = None   # month-name dates ("effective April 6, 2026") are read for hours tables only
             if em:
                 for c in pending_table:
-                    c.effective = c.effective or em.group(1)
+                    c.effective = c.effective or _eff_mdy(em.group(1))
         # short plain line right before a table acts as its caption; two in a row = section + caption
         if is_short:
             if prev_short and caption:

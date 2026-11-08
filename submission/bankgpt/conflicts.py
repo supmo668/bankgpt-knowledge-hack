@@ -41,6 +41,9 @@ def _fmt_values(v: tuple) -> str:
     parts = []
     order = {"apy": 0, "apr": 1, "rate": 2, "div": 3}
     for col, nums in sorted(v, key=lambda x: order.get(x[0].split("-")[0], 9)):
+        if col.startswith("hours:"):
+            parts.append(f"{col[6:]} {' '.join(nums)}")
+            continue
         base = col.split("-")[0]
         label = COL_LABEL.get(base, base) + (" (intro)" if col.endswith("-intro") else "")
         parts.append(" – ".join(f"{n:g}%" for n in nums) + f" {label}")
@@ -113,6 +116,10 @@ class ConflictFinder:
             product = wc.ctx.split(" > ")[-1] if wc.ctx else ""
             term = "".join(f" {n}-month" for n in re.findall(r"(\d+)\s*Months?", wc.text))
             topic = f"{product}: {label}{term}".strip(": ")
+            if key.startswith("hours | "):
+                _, branch, day = key.split(" | ", 2)
+                topic = f"{branch} hours: {day}"
+                label = topic
             # how the losing values lost: stale page in the same snapshot, or superseded by a later crawl
             same_snap_stale = any(si == latest and cid in s.shadowed.get(si, set())
                                   for v, occ in vmap.items() if v != wv for si, cid in occ)

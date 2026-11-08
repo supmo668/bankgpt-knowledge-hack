@@ -518,7 +518,8 @@ class Answerer:
         cap = first.ctx.split(" > ")[-1] if first.ctx else ""
         parts = [_short(s.chunks[r].text) for r in rids]
         lead = f"{cap}: " if cap and not re.search(r"\d", cap) and cap.lower() not in parts[0].lower() else ""
-        return lead + "; ".join(parts) + "."
+        body = "; ".join(parts)
+        return lead + body + ("" if body.endswith(".") else ".")
 
     def _best_clause(self, question: str, txt: str) -> str:
         """A flattened fee list ('Official check $5.00 each Domestic wire $25.00 each ...'): the one item asked."""

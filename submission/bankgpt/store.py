@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import date
 from typing import Optional
 
-from .chunker import Chunk, PageInfo, chunk_page, page_info
+from .chunker import Chunk, PageInfo, chunk_page, hours_cells, page_info
 from .text import tokens
 
 VALUE_CELL_RE = re.compile(r"\d(?:\.\d+)?\s?%|\$\s?\d|^\s*[\d.,]+\s*$")
@@ -28,6 +28,18 @@ def _eff_date(s: Optional[str]) -> date:
         return date.min
 
 
+# Branch hours (fact family added for R8): see chunker.hours_cells.
+BRANCH_SCOPE_RE = re.compile(r"(?i)\b(branch|office|location|center)\b")
+
+
+def _branch_scope(c: Chunk) -> str:
+    """Which branch an hours row belongs to: the nearest heading naming a branch, else the page's first heading."""
+    parts = [x.strip() for x in (c.ctx or "").split(" > ") if x.strip()]
+    named = [x for x in parts if BRANCH_SCOPE_RE.search(x)]
+    scope = named[-1] if named else (parts[0] if parts else re.sub(r"^https?://[^/]+", "", c.url))
+    return re.sub(r"\s+", " ", re.sub(r"(?i)\bhours\b.*$", "", scope)).strip(" :").lower()
+
+
 FAMILY_RE = re.compile(r"(?i)\b(atv|snowmobile|jet ski|boat|rv|recreational|motorcycle loans? only|auto|vehicle)")
 
 
@@ -35,6 +47,9 @@ def row_key(c: Chunk) -> Optional[str]:
     """Fact key of a table row = its qualifier cells (term, tier, product), not its values."""
     if c.kind != "row" or not c.cells:
         return None
+    if hours_cells(c):   # hours facts: one per (branch, day); the times are the values, not qualifiers
+        day = re.sub(r"\s*-\s*", "-", re.sub(r"\s+", " ", next(iter(c.cells.values())).lower().replace("–", "-")))
+        return f"hours | {_branch_scope(c)} | {day.strip()}"
     quals = [c.key_alias.get(v, v) for k, v in c.cells.items()
              if not re.search(r"(?i)^min|minimum|payment", k) and v.strip().lower() not in ("none", "n/a", "na", "—", "-") and not VALUE_CELL_RE.search(v) or re.search(r"(?i)month|year|tier|\+|or less|–|-", v)
              and not re.search(r"%", v)]
@@ -79,6 +94,9 @@ def _canon_col(header: str, cell: str) -> str:
 
 def row_values(c: Chunk) -> tuple:
     """Value cells as (canonical column, numbers), so 6.000% == 6.00% and APR == Annual Percentage Rate."""
+    hours = hours_cells(c)
+    if hours:
+        return tuple(sorted((f"hours:{k.lower()}", (v,)) for k, v in hours.items()))
     vals = []
     for k, v in c.cells.items():
         if re.search(r"(?i)payment|min|points|tier|balance|amount|limit|example", k):
