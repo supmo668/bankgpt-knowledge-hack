@@ -59,17 +59,16 @@ TOKEN_RE = re.compile(r"\d+/\d+|[a-z0-9]+(?:\$[a-z]+)?")
 
 
 def stem(t: str) -> str:
-    if t.isdigit() or len(t) <= 3:
+    """Plural strip + truncation stemming (recognition/recognized -> recogn)."""
+    if t.isdigit() or len(t) <= 3 or not t.isalpha():
         return t
-    for suf in ("ies", "es", "s"):
-        if t.endswith(suf) and len(t) - len(suf) >= 3:
-            if suf == "ies":
-                return t[:-3] + "y"
-            if suf == "es" and t[-3] in "sxz":
-                return t[:-2]
-            if suf == "s" and not t.endswith("ss"):
-                return t[:-1]
-    return t
+    if t.endswith("ies") and len(t) > 4:
+        t = t[:-3] + "y"
+    elif t.endswith("es") and len(t) > 4 and t[-3] in "sxz":
+        t = t[:-2]
+    elif t.endswith("s") and not t.endswith("ss") and len(t) > 3:
+        t = t[:-1]
+    return t[:6]
 
 
 def tokens(text: str, drop_stop: bool = True) -> list[str]:

@@ -11,6 +11,7 @@ from .text import clean_inline, parse_date_line
 
 EFFECTIVE_RE = re.compile(r"effective (?:as of )?(\d{1,2}/\d{1,2}/\d{2,4})", re.I)
 BOLD_LABEL_RE = re.compile(r"^\*\*([^*]{1,40})\*\*:?$")
+SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z“\"(])")
 NOISE_LINE_RE = re.compile(r"^(\* \* \*|---+|Loading locations\.\.\.|Go|Cancel|Continue.*Cancel|\d+ min read)$", re.I)
 
 
@@ -93,6 +94,8 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
     para: list[str] = []
     group: Optional[list] = None   # [label, lines, ctx]
     last_para_text = ""
+    section = ""
+    prev_short = False
     tcount = 0
     pending_table: list[Chunk] = []
 
@@ -124,7 +127,14 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
         if m:
             group = [m.group(1).strip(), [], (head_ctx() + " | " + last_para_text[-160:]).strip(" |")]
             return
-        chunks.append(Chunk(url, txt, head_ctx(), "para", links=links))
+        ctx = " > ".join(x for x in (head_ctx(), section, caption) if x and x != txt)
+        chunks.append(Chunk(url, txt, ctx, "para", links=links))
+        if len(txt) > 350:
+            # long paragraphs are also indexed sentence by sentence (precise hits, short answers)
+            sents = SENT_SPLIT_RE.split(txt)
+            for snt in sents:
+                if len(snt) >= 25:
+                    chunks.append(Chunk(url, snt, ctx, "sent"))
         last_para_text = txt
 
     i = 0
@@ -140,7 +150,7 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             tcount += 1
             tkey = f"{url}#t{tcount}"
             pending_table = []
-            ctx = " > ".join(x for x in (head_ctx(), caption) if x)
+            ctx = " > ".join(x for x in (head_ctx(), section, caption) if x)
             while i < n and lines[i].strip().startswith("|"):
                 cells = [clean_inline(c)[0] for c in _split_row(lines[i])]
                 i += 1
@@ -159,6 +169,8 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             flush_para()
             i += 1
             continue
+        cl = clean_inline(s)[0]
+        is_short = 0 < len(cl) <= 60 and not cl.endswith((".", ":", "?", "!")) and not s.startswith(("-", "*", "[", "!"))
         m = re.match(r"^(#{1,6})\s+(.*)$", s)
         if m:
             flush_para()
@@ -166,7 +178,8 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             lvl = len(m.group(1))
             heads = {k: v for k, v in heads.items() if k < lvl}
             heads[lvl] = clean_inline(m.group(2))[0]
-            caption = ""
+            caption = section = ""
+            prev_short = False
             i += 1
             continue
         if pending_table:
@@ -174,10 +187,12 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             if em:
                 for c in pending_table:
                     c.effective = c.effective or em.group(1)
-        # short plain line right before a table acts as its caption
-        cl = clean_inline(s)[0]
-        if 0 < len(cl) <= 60 and not cl.endswith((".", ":", "?", "!")) and not s.startswith(("-", "*", "[", "!")):
+        # short plain line right before a table acts as its caption; two in a row = section + caption
+        if is_short:
+            if prev_short and caption:
+                section = caption
             caption = cl
+        prev_short = is_short
         if s.startswith(("- ", "* ", "+ ")) and not para:
             para.append(s[2:])
         else:
