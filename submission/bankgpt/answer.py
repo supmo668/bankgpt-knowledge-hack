@@ -43,6 +43,15 @@ NUMBER_Q_RE = re.compile(r"\b(routing|phone|telephone|fax|account|aba|nmls)\s*(n
                          r"\bnumber\b.{0,30}\bcall\b|\bcall\b.{0,30}\bnumber\b|\bwho do i call\b", re.I)
 DATE_PHRASE_RE = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2},?\s+)?(19|20)\d\d\b|"
                             r"\b(19|20)\d\d-\d\d-\d\d\b|\b(in|of|during|since)\s+(19|20)\d\d\b", re.I)
+# free-text award facts: the organisation that recognised the institution (the newest dated statement wins)
+ORG_RE = re.compile(r"\b(Forbes|Newsweek|BauerFinancial|Bauer|S&P Global|Des Moines Register|Credit Union Journal|"
+                    r"J\.D\. Power|Money Magazine)\b")
+AWARD_RE = re.compile(r"(?i)\b(recogni(?:[sz]|tion)\w*|awards?|awarded|rank(?:ed|ing|s)?|named|honou?r\w*|best|top)\b")
+ORDINAL_TIME_RE = re.compile(r"(?i)\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th))"
+                             r" (?:consecutive )?(?:time|year)\b")
+# a sentence that refers back to the entity of the sentence before it ("This initiative provides up to $15,000")
+ANAPHOR_RE = re.compile(r"^(?:This|The|These|It|Its)\b(?:\s+(?:new\s+)?(?:initiative|program|programme|offer|grant|"
+                        r"loan|account|card|benefit|service|fund|product|partnership))?\b")
 HISTORY_RE = re.compile(r"\b(expired|ended|past|previous|former|used to|old)\b", re.I)
 PROCEDURE_RE = re.compile(r"\bhow (do|can|would) i\b|\bwhere (do|can) i\b|\bonline\b", re.I)
 COUNT_INTENT_RE = re.compile(r"\bhow many\b", re.I)
@@ -89,6 +98,7 @@ class Intent:
     listing: bool
     hi: bool
     lo: bool
+    org: Optional[str] = None      # a recognition question names the organisation that gave it
 
 
 def intent_of(q: str) -> Intent:
@@ -107,6 +117,7 @@ def intent_of(q: str) -> Intent:
         listing=bool(LIST_INTENT_RE.search(q)),
         hi=bool(SUPER_HI_RE.search(q)),
         lo=bool(SUPER_LO_RE.search(q)),
+        org=(o.group(1) if (o := ORG_RE.search(q)) and AWARD_RE.search(q) else None),
     )
 
 
@@ -326,6 +337,8 @@ class Answerer:
             return Result(REFUSAL_TEXT, confident=False)
         if it.count_noun:
             best = self._latest_statement(best, ranked, ents, it.count_noun)
+        elif it.org:
+            best = self._latest_award(best, ranked, it.org)
         sc, cid = best
         text, used = self._compose(question, it, cid, sc, ranked, si)
         text = self._titled(text, cid)
@@ -381,6 +394,43 @@ class Answerer:
             return best
         _, sc, cid = max(pool, key=lambda t: (t[0], t[1]))
         return (sc, cid)
+
+    def _latest_award(self, best, ranked, org: str):
+        """Recognitions repeat yearly ("the fourth time", "the fifth time"): the most recently published
+        statement naming the organisation and an award word wins, as for counts."""
+        s = self.s
+        pool = []
+        for sc, cid in ranked[:80]:
+            c = s.chunks[cid]
+            if c.kind not in ("para", "sent") or org not in c.text or not AWARD_RE.search(c.text):
+                continue
+            info = s.pages[c.url]
+            if not info.pub_date:
+                continue
+            # a statement about the recognition (its own release, or "the Nth time") outranks a passing mention
+            # in boilerplate ("It is a Forbes Best-in-State Credit Union ...")
+            ordinal = bool(ORDINAL_TIME_RE.search(c.text))
+            pool.append((org in info.title or ordinal, info.pub_date, ordinal, sc, cid))
+        if not pool:
+            return best
+        *_, sc, cid = max(pool, key=lambda t: t[:4])
+        return (sc, cid)
+
+    def _continuation(self, cid: int) -> Optional[str]:
+        """The sentence right after chunk `cid` in its paragraph when it refers back to it (entity resolution in
+        free text: "This initiative ..." is about the program the sentence before named)."""
+        s = self.s
+        c = s.chunks[cid]
+        tail = c.text.strip()[-80:]
+        for pid in s.url_chunks.get(c.url, []):
+            p = s.chunks[pid]
+            if p.kind != "para" or pid == cid or tail not in p.text:
+                continue
+            after = p.text[p.text.index(tail) + len(tail):].strip()
+            nxt = re.split(r"(?<=[.!?])\s+(?=[A-Z“\"])", after, maxsplit=1)[0] if after else ""
+            if nxt and ANAPHOR_RE.match(nxt) and len(nxt) <= 360:
+                return nxt
+        return None
 
     def coverage(self, question: str, cid: int) -> float:
         """Share of the question's information (idf mass) that the passage and its context mention."""
@@ -503,6 +553,12 @@ class Answerer:
         elif len(txt) > 360:
             txt = self._best_sentences(question, txt)
         used = [cid]
+        if it.org and len(txt) > 200:
+            # a recognition: the sentence naming the organisation and how many times it has recognised us
+            sents = re.split(r"(?<=[.!?])\s+(?=[A-Z“\"])", c.text)
+            hits = [x for x in sents if it.org in x or ORDINAL_TIME_RE.search(x)]
+            if hits:
+                txt = " ".join(hits[:2])[:600]
         if DESCRIPTIVE_RE.search(question.strip()) and not (it.rate or it.fee or it.count_noun or it.hours):
             # a descriptive question: add the next-best passage from the same page
             for osc, ocid in ranked[:15]:
@@ -515,6 +571,11 @@ class Answerer:
                 txt = f"{txt} {extra}"
                 used.append(ocid)
                 break
+            # each quoted passage brings the sentence that refers back to it, so the facts stay with their entity
+            for u in list(used):
+                nxt = self._continuation(u)
+                if nxt and nxt not in txt:
+                    txt = f"{txt} {nxt}"
         return txt, used
 
     def _render_rows(self, rids: list[int]) -> str:
