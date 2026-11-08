@@ -35,6 +35,6 @@ node_modules/
 
 # ── Hackathon data (D1/R11): NEVER commit — public repo, redistribution forbidden ──
 snapshots_zip/
-snapshots/
+/snapshots/
 results/
 *.zip
