@@ -1,0 +1,15 @@
+event: iteration-complete
+workstream: haca-13
+issue: HACA-13
+iteration: '1.1'
+branch: feat/haca-13-pvr-followups
+base: 3af8206
+commit_hash: 70fd91b
+summary: >-
+  R7 clean-env host embed test plus an unchanged-harness run; R8 branch-hours fact family (current, historical,
+  other branch, missing evidence, keying edge cases); unsupported-confident 0.222 (8/36) and wrongly-refused
+  0.000 (0/37) on public, in RESULTS.md. 93 tests green; public 0.7705, 32 conflicts, 12/12 gold recall unchanged.
+  No snapshot data committed.
+qgr_receipt: workstreams/haca-13/qgr/bankgpt-knowledge-hack-supmo668-worktree-agent-haca-13-bankgpt-knowledge-hack-qgr-iteration-complete-20261108-1509-776584c.md
+emitted_at: 2026-11-08T15:10:47Z
+next_handoff: cto land (non-blocking; submission at 3af8206 stands)

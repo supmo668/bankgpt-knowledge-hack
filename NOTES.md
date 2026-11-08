@@ -30,7 +30,8 @@ source kind and an authority, plus a publication date when it is a press release
 covers chunk text + context + page title.
 
 **Facts and conflicts at ingest.** Every table row and `label: value` line gets a *fact key*: product scope +
-its qualifier cells (term, balance or loan-amount tier, model-year tier, rate vs APY vs APR column). Model-year
+its qualifier cells (term, balance or loan-amount tier, model-year tier, rate vs APY vs APR column; opening-hours rows
+use branch + day, see "Extending" below). Model-year
 ranges are aliased by their rank in the table, so "2024-27" on the rate sheet and "2023-26" on a stale page are
 the same fact (the newest tier). Inside each snapshot view, rows sharing a key but disagreeing on a shared value
 column are resolved by the currency rules below. Losers are *shadowed*: never quoted, never a source.
@@ -86,10 +87,56 @@ Unit-tested in `tests/test_currency_rules.py` (decision D3).
 7. **When the site doesn't say, say so.** No guessing across terms or tiers. "It isn't listed; please contact
    us" with no numbers.
 
+## Embedding it in another Python app (R7)
+
+The contract is the whole interface: load `submission/solution.py`, call `build()`, then `ingest(snapshot)` once per
+snapshot (oldest first), then `answer(question, as_of=None)` and `conflicts()`. Snapshots and pages can be any
+objects with the contract's attribute names (`snapshot_id`, `taken_on`, `pages`; `url`, `title`, `markdown`,
+`fetched_at`). The returned `Answer` / `Conflict` / `Source` are the kit's `harness/contract.py` dataclasses: the
+solution imports them from `harness/` when it sits next to the submission folder (the scorer's layout).
+`tests/test_embeddable.py` proves this. A throwaway host script in a temp directory, run as `python -I -S -B`
+with an empty environment, builds two independent instances from its own duck-typed snapshots (the kit's
+selftest site) and checks the answers, `as_of`, refusals, conflicts and that no non-stdlib module was loaded. The
+same test runs the organiser's `harness/run_eval.py` unchanged in the same clean interpreter (selftest 1.0) and
+pins the three harness files to the kit's sha256.
+
+## Extending: a new fact family (R8)
+
+Scenario: branch hours with a location and an effective date (synthetic site in `tests/test_branch_hours.py`; no
+public question is hard-coded). Cases covered: the current answer, a historical change (`as_of` and "in February
+2026"), a different branch, missing evidence (a branch page with no hours, an unknown branch), and a stale index page.
+
+What already worked unchanged: the answer path (hours intent, time gate, proper-name gate, `as_of` views,
+refusal). Those cases pass on the pre-change code too. What did not: hours were not *facts*. The times were read
+as qualifiers, so a change of hours never formed a fact group, nothing was shadowed and `conflicts()` stayed
+silent. The month-name effective date ("effective April 6, 2026") was also ignored.
+
+Files changed for the family (about 110 lines, no new module and no plugin layer):
+
+- `submission/bankgpt/chunker.py`: `hours_cells()` recognises an hours row: a time-range cell with a.m./p.m. or
+  noon, or "Closed" in a table whose other rows carry times. `norm_hours()` writes every time as `H:MMam/pm`, so
+  "9 a.m.-5 p.m." and "9:00 AM to 5:00 PM" are one value. Month-name effective dates ("effective April 6, 2026")
+  are read for hours tables only, so rate tables keep their M/D/YYYY rule.
+- `submission/bankgpt/store.py`: an hours row's fact key is `hours | <branch> | <day>`. The branch is the nearest
+  heading that names one ("Main Street Branch"), or else the nearest specific heading ("## Downtown" on an index
+  page). Generic words (branch, location, hours, lobby, drive-up…) are dropped, so the same branch on
+  `/locations` and on its own page is one fact, a "## Branch Hours" heading names no branch, and two branches are
+  never a conflict. The values are the times per service (lobby or drive-up, taken from the column header or else
+  the table's heading), so separate lobby and drive-up tables on one page are separate facts.
+- `submission/bankgpt/conflicts.py`: hours values and topics are formatted as times ("main street hours:
+  saturday"), with the branch kept in the dedupe label.
+- `submission/bankgpt/answer.py`: the hours gate also accepts "Closed" from an hours table, and a one-line fix
+  for a doubled full stop after "p.m.".
+- `tests/test_branch_hours.py`: the scenario plus the keying edge cases found at the quality gate.
+
+The currency rules apply as written: the newest effective date wins, then the page that is present, then
+authority. Public score, conflicts and every existing test are unchanged (0.7705, 32 conflicts, 12/12 gold recall).
+
 ## Proof of work
 
 - `docs/eval/RESULTS.md`: score per run from the 0.093 baseline, per-category scores, the dev/blind/selftest
-  suites (with an honest note on which were tuned against), and conflicts.
+  suites (with an honest note on which were tuned against), the refusal diagnostics (unsupported-confident and
+  wrongly-refused rates) and conflicts.
 - `docs/eval/latest.md` and `runs.csv`: regenerated by `python scripts/eval_report.py`.
 - `docs/eval/dev_eval.jsonl`, `dev2_blind.jsonl` and `conflicts_gold.json`: our own as-of, reworded and
   refusal items, plus gold conflicts, built from snapshot diffs.

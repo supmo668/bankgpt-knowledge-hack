@@ -18,6 +18,11 @@ RATE_INTENT_RE = re.compile(r"\b(rates?|aprs?|apys?|dividends?|yield|interest)\b
 FEE_INTENT_RE = re.compile(r"\b(fees?|cost|costs|charge|price|how much)\b", re.I)
 HOURS_INTENT_RE = re.compile(r"\bhours\b|\bwhat time\b|\bopen (on|until)\b", re.I)
 TIME_RE = re.compile(r"\b\d{1,2}(:\d\d)?\s?(a\.?m\.?|p\.?m\.?)|\bnoon\b", re.I)
+
+
+def _has_hours(c) -> bool:
+    """A passage that states hours: a time, or "Closed" in a row of an hours table."""
+    return bool(TIME_RE.search(c.text)) or (c.hours_table and "closed" in c.text.lower())
 LIST_INTENT_RE = re.compile(r"\b(what|which) (\w+ ){0,3}(do|does) (you|dupaco) (offer|have)\b|\blist\b|\ball (of )?(the|your)\b|"
                             r"\b(rates|aprs|apys) (for|on) (the|your)\b|\bwhat are (the|your|their) (\w+ ){0,3}(rates|aprs|apys)\b|"
                             r"\b(\w+ )?(rates|aprs|apys)\b.*\b(right now|today)\b|\bprovide (\w+ ){0,3}rates\b", re.I)
@@ -247,7 +252,7 @@ class Answerer:
             if it.fee and "$" in c.text:
                 f *= 1.3
             if it.hours:
-                f *= 2.0 if TIME_RE.search(c.text) else 0.5
+                f *= 2.0 if _has_hours(c) else 0.5
             if it.count_noun:
                 f *= 2.5 if re.search(rf"\b\d[\d,]*\+? (?:\w+ ){{0,2}}{re.escape(it.count_noun[:5])}", c.text, re.I) else 0.6
             if ents and any(e.lower() in c.text.lower() for e in ents):
@@ -311,7 +316,7 @@ class Answerer:
                 continue
             if it.fee and not it.rate and "$" not in c.text:
                 continue
-            if it.hours and not TIME_RE.search(c.text):
+            if it.hours and not _has_hours(c):
                 continue
             if s.expired(cid, si) and not HISTORY_RE.search(question):
                 continue   # an ended offer never answers a question about today
@@ -518,7 +523,8 @@ class Answerer:
         cap = first.ctx.split(" > ")[-1] if first.ctx else ""
         parts = [_short(s.chunks[r].text) for r in rids]
         lead = f"{cap}: " if cap and not re.search(r"\d", cap) and cap.lower() not in parts[0].lower() else ""
-        return lead + "; ".join(parts) + "."
+        body = "; ".join(parts)
+        return lead + body + ("" if body.endswith(".") else ".")
 
     def _best_clause(self, question: str, txt: str) -> str:
         """A flattened fee list ('Official check $5.00 each Domestic wire $25.00 each ...'): the one item asked."""

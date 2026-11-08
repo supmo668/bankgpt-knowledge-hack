@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
-from .store import Store, row_values, values_disagree
+from .store import Store, hours_key_parts, row_values, values_disagree
 
 RATE_PAGE_KINDS = ("rate_sheet", "product", "landing", "calculator", "document", "home")
 ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"]
@@ -41,6 +41,9 @@ def _fmt_values(v: tuple) -> str:
     parts = []
     order = {"apy": 0, "apr": 1, "rate": 2, "div": 3}
     for col, nums in sorted(v, key=lambda x: order.get(x[0].split("-")[0], 9)):
+        if col.startswith("hours:"):
+            parts.append(f"{col[6:]} {' '.join(nums)}")
+            continue
         base = col.split("-")[0]
         label = COL_LABEL.get(base, base) + (" (intro)" if col.endswith("-intro") else "")
         parts.append(" – ".join(f"{n:g}%" for n in nums) + f" {label}")
@@ -113,6 +116,9 @@ class ConflictFinder:
             product = wc.ctx.split(" > ")[-1] if wc.ctx else ""
             term = "".join(f" {n}-month" for n in re.findall(r"(\d+)\s*Months?", wc.text))
             topic = f"{product}: {label}{term}".strip(": ")
+            hk = hours_key_parts(key)
+            if hk:
+                topic = label = f"{hk[0]} hours: {hk[1]}"   # the label is the dedupe key: keep the branch in it
             # how the losing values lost: stale page in the same snapshot, or superseded by a later crawl
             same_snap_stale = any(si == latest and cid in s.shadowed.get(si, set())
                                   for v, occ in vmap.items() if v != wv for si, cid in occ)
