@@ -38,8 +38,9 @@ FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-ser
 
 def score_progression(md: str) -> list[tuple[str, str, float]]:
     """(commit, change, public final) rows of the 'Score per run' table in RESULTS.md, in table order."""
-    # The heading, any non-table lines, then the first run of table lines (and nothing after it).
-    m = re.search(r"## Score per run[^\n]*\n(?:(?!\|)[^\n]*\n)*((?:\|[^\n]*\n)+)", md)
+    # The heading, then prose lines (no table rows, no other heading), then the first run of table lines. A
+    # section without its own table must not borrow the next section's table.
+    m = re.search(r"^## Score per run[^\n]*\n(?:(?![|#])[^\n]*\n)*((?:\|[^\n]*\n)+)", md, flags=re.M)
     if not m:
         raise ValueError("RESULTS.md has no 'Score per run' table")
     out = []
