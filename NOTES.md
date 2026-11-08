@@ -55,8 +55,8 @@ recognitions). The resolution is the value the answer path gives today.
    Paragraph rates are kept out of rate answers by the gates in step 4 (rate sheet / product / landing / home
    pages only, real rate value, named product); v2 checks them against the tables in `conflicts()` (see
    "Free-text facts"). Award questions take the newest dated statement about the recognition, a sentence that
-   refers back to the passage it follows ("This initiative provides …") is kept with it, and a yes/no question
-   about a stated value ("Do any savings tiers pay 0.35% APY?") checks the value instead of retrieving by it.
+   refers back to the passage it follows ("This grant covers …") is kept with it, and a yes/no question
+   about a stated value ("Does any club account earn 1.25% APY?") checks the value instead of retrieving by it.
    The reason a value won goes in `conflict_note`.
 6. Refuse honestly (`confident=False`, no digits in the text) when nothing passes the gates, or the best passage
    covers under 25% of the question's information (IDF mass).
@@ -137,21 +137,26 @@ observation, undated change, offer ending mid-gap, shadowed copies stored). `doc
   the stated term, and a tier containing the stated amount; it must share a distinctive product word with the
   sentence ("achieve", "atv", "equity"; not "loan" or "savings"), or contain every word of an all-generic name
   ("personal loan"); a standard claim never maps to an intro key. The sentence's own words decide first, and its
-  heading only when the sentence names no product, because one disclosure paragraph is often repeated under every
-  product tab of a page. Personal pages never map to business products. Ties are kept: a claim that names no tier
+  heading only when the sentence names no product and the paragraph is not repeated under other headings, because
+  one disclosure paragraph is often repeated under every product tab of a page. Without a stated term, the sentence
+  needs two of the product's distinctive words (or all of them, when it has fewer). Intro values are compared only
+  with intro columns, standard values only with standard ones. Personal pages never map to business products. Ties are kept: a claim that names no tier
   maps to every tier of the product, and agrees when any of them carries its value.
 - **Conflicts.** In each crawl, a claim that no tier of its product carries is a paragraph-vs-table conflict
   (topic "… (paragraph vs table)"), one entry per statement and fact, while the fact is still on the site. It is
   resolved by the same rule order as table rows (offer live, effective date, present in crawl, authority,
   publication date, first seen), where the sentence's stated "as of" date counts as its effective date. A
   paragraph the newest crawl no longer shows has lost to the table's current value.
-- **Counts and awards** stay dated text facts: the newest publication wins ("22 branch office locations",
-  "the fifth time Forbes recognized Dupaco").
+- **Counts and awards** stay dated text facts: the newest publication wins (a branch count,
+  "the Nth time" a ranking named the credit union).
 - **Not covered yet:** fees and opening hours stated in paragraphs are not checked against the fee and hours
   tables.
 
-Tested on synthetic pages in `tests/test_textfacts.py`. `docs/eval/conflicts_gold.json` carries 7
-`paragraph_vs_table` gold cases (cg-13 … cg-19) built from snapshot diffs.
+Tested on synthetic pages in `tests/test_textfacts.py`. `docs/eval/conflicts_gold.json` carries 4
+`paragraph_vs_table` gold cases (cg-13 … cg-16) built from snapshot diffs: two stale auto-loan payment examples and
+two press releases stating an older Mortgage Rate Relief APR. Those are all the paragraph-vs-table contradictions
+the five snapshots hold under these rules. An earlier draft also flagged an Achieve money market note; the quality
+gate showed the rate sheet's intro column carries the same value, so it was a false positive and was dropped.
 
 ## Embedding it in another Python app (R7)
 
