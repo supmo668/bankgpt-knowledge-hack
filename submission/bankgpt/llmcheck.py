@@ -33,7 +33,8 @@ SYSTEM = ("You check a bank website for self-contradictions. You get one sentenc
 
 _cache: Optional[dict] = None
 _failed: set = set()   # pairs that got no verdict in this process: not retried until the next run
-calls = 0          # live API calls made in this process (tests and the eval report read it)
+calls = 0          # API requests attempted in this process (tests read it)
+TIMEOUT_S = 30     # per request; with one retry a stalled network costs at most ~1 min per pair, never the ingest
 
 
 def enabled() -> bool:
@@ -49,10 +50,16 @@ def _load() -> dict:
     if _cache is None:
         _failed.clear()      # a fresh load is a fresh run: earlier failures may succeed now
         try:
-            _cache = json.loads(_cache_path().read_text())
+            loaded = json.loads(_cache_path().read_text())
         except (OSError, ValueError):
-            _cache = {}
+            loaded = None
+        # a hand-edited or torn file is no verdict, never a crash: keep only well-formed entries
+        _cache = {k: v for k, v in loaded.items() if _valid(v)} if isinstance(loaded, dict) else {}
     return _cache
+
+
+def _valid(v) -> bool:
+    return isinstance(v, dict) and isinstance(v.get("same_fact"), bool) and isinstance(v.get("contradicts"), bool)
 
 
 def _save() -> None:
@@ -77,7 +84,7 @@ def _ask(model: str, sentence: str, quote: str, row: str) -> Optional[dict]:
     except ImportError:
         return None
     try:
-        client = anthropic.Anthropic()
+        client = anthropic.Anthropic(timeout=TIMEOUT_S, max_retries=1)
         calls += 1
         resp = client.beta.messages.create(
             model=model, max_tokens=1024, system=SYSTEM,
@@ -97,7 +104,7 @@ def _ask(model: str, sentence: str, quote: str, row: str) -> Optional[dict]:
         v = json.loads(m.group(0))
     except ValueError:
         return None
-    if not isinstance(v.get("same_fact"), bool) or not isinstance(v.get("contradicts"), bool):
+    if not _valid(v):
         return None
     return {"same_fact": v["same_fact"], "contradicts": v["contradicts"]}
 
