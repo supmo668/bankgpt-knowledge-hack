@@ -30,7 +30,7 @@ principals:
   #         repos:
   #           - org: your-org
   #             repo: your-repo
-  default: unknown               # fallback principal when $USER is unmapped
+  default: supmo668              # fallback principal when $USER is unset/unmapped (Paperclip runner runs with USER unset — HACA-3)
 
 # ── Project ───────────────────────────────────────────────────────────────
 project:
@@ -412,7 +412,7 @@ observability:
                                  # LOGFIRE_BASE_URL are fetched from the secrets provider by
                                  # /cto-init and written to ~/.bashrc.
   app:                           # APP/PROD observability (DevEx-owned) — distinct from logfire's session tracing
-    sentry:     { enabled: true,  dsn_secret: "SENTRY_DSN" }   # errors + releases via the Sentry MCP
+    sentry:     { enabled: false, dsn_secret: "SENTRY_DSN" }   # off until DevEx wires Sentry to a real app (HACA-3)
     prometheus: { enabled: false, alerts: [] }                 # alert rules (Fly metrics / Prometheus)
 
 # ── Issues (proof-of-work audit trail) ────────────────────────────────────────
