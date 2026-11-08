@@ -39,6 +39,7 @@ PAGE = """<!doctype html>
  h1 { font-size: 22px; margin: 0 0 4px; } p.lead { color: var(--muted); margin: 0 0 20px; }
  form { display: flex; gap: 8px; flex-wrap: wrap; }
  input[type=text] { flex: 1 1 420px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+ select { max-width: 100%; min-width: 0; }
  select, button { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); font: inherit; background: #fff; }
  button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
  .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-top: 16px; }
@@ -46,14 +47,24 @@ PAGE = """<!doctype html>
  .refused { border-left: 4px solid var(--warn); }
  .note { background: #fff8e6; border: 1px solid #f0d9a6; border-radius: 8px; padding: 8px 10px; margin-top: 10px; font-size: 13px; }
  ul.src { margin: 8px 0 0; padding-left: 18px; } ul.src li { margin: 2px 0; }
+ ul.src a, .card div { overflow-wrap: anywhere; }
+ .scroll { overflow-x: auto; }
  table { border-collapse: collapse; width: 100%; font-size: 13px; }
- th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 6px 4px; vertical-align: top; }
+ th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 6px 4px; vertical-align: top;
+          overflow-wrap: anywhere; min-width: 7em; }
  nav a { margin-right: 14px; color: var(--accent); }
 </style></head>
 <body><main>
 <nav><a href="/">Ask</a><a href="/conflicts">Conflicts ({n_conflicts})</a></nav>
 {body}
 </main></body></html>"""
+
+
+def _link(url: str) -> str:
+    """Only http(s) URLs become links; anything else is shown as escaped text."""
+    if urlparse(url).scheme in ("http", "https"):
+        return f'<a href="{html.escape(url)}" rel="noreferrer">{html.escape(url)}</a>'
+    return html.escape(url)
 
 
 class Demo:
@@ -72,12 +83,12 @@ class Demo:
         opts = ['<option value="">latest (' + html.escape(self.snaps[-1].taken_on) + ")</option>"]
         for s in self.snaps:
             sel = " selected" if s.taken_on == as_of else ""
-            opts.append(f'<option value="{s.taken_on}"{sel}>as of {s.taken_on} ({html.escape(s.snapshot_id)})</option>')
+            opts.append(f'<option value="{html.escape(s.taken_on)}"{sel}>as of {html.escape(s.taken_on)}</option>')
         body = ["<h1>What's true now?</h1>",
                 '<p class="lead">Answers come from the crawled snapshots only: current value, right tier, a source, '
                 "or an honest &ldquo;I don't know&rdquo;.</p>",
-                '<form method="get" action="/"><input type="text" name="q" autofocus placeholder="e.g. What is the '
-                '60-month auto loan rate for a 2025 car?" value="' + html.escape(q) + '"><select name="as_of">'
+                '<form method="get" action="/"><input type="text" name="q" aria-label="Your question" autofocus placeholder="e.g. What is the '
+                '60-month auto loan rate for a 2025 car?" value="' + html.escape(q) + '"><select name="as_of" aria-label="Answer as of snapshot date">'
                 + "".join(opts) + '</select><button type="submit">Ask</button></form>']
         if q:
             t = time.time()
@@ -91,8 +102,8 @@ class Demo:
                 body.append(f'<div class="note"><b>Why this value:</b> {html.escape(a.conflict_note)}</div>')
             if a.sources:
                 body.append('<ul class="src">' + "".join(
-                    f'<li><a href="{html.escape(s.url)}" rel="noreferrer">{html.escape(s.url)}</a> '
-                    f'<span class="meta">({html.escape(s.snapshot_id or "")})</span></li>' for s in a.sources) + "</ul>")
+                    f'<li>{_link(s.url)} <span class="meta">({html.escape(s.snapshot_id or "")})</span></li>'
+                    for s in a.sources) + "</ul>")
             body.append("</div>")
         return PAGE.replace("{n_conflicts}", str(len(self.conflicts))).replace("{body}", "".join(body))
 
@@ -105,6 +116,8 @@ class Demo:
         body = ("<h1>Where the website contradicts itself</h1><p class=lead>Computed at ingest; resolution = the value "
                 "the answer path gives today.</p><div class=card><table><tr><th>Topic</th><th>Values seen</th>"
                 "<th>Resolution</th><th>Why</th></tr>" + "".join(rows) + "</table></div>")
+        body = body.replace("<div class=card><table>", "<div class=card><div class=scroll><table>").replace(
+            "</table></div>", "</table></div></div>")
         return PAGE.replace("{n_conflicts}", str(len(self.conflicts))).replace("{body}", body)
 
 
