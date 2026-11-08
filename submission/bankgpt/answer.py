@@ -38,6 +38,7 @@ NUMBER_Q_RE = re.compile(r"\b(routing|phone|telephone|fax|account|aba|nmls)\s*(n
                          r"\bnumber\b.{0,30}\bcall\b|\bcall\b.{0,30}\bnumber\b|\bwho do i call\b", re.I)
 DATE_PHRASE_RE = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2},?\s+)?(19|20)\d\d\b|"
                             r"\b(19|20)\d\d-\d\d-\d\d\b|\b(in|of|during|since)\s+(19|20)\d\d\b", re.I)
+HISTORY_RE = re.compile(r"\b(expired|ended|past|previous|former|used to|old)\b", re.I)
 PROCEDURE_RE = re.compile(r"\bhow (do|can|would) i\b|\bwhere (do|can) i\b|\bonline\b", re.I)
 COUNT_INTENT_RE = re.compile(r"\bhow many\b", re.I)
 LINK_INTENT_RE = re.compile(r"\b(link|url|website address|web address|web page|webpage)\b", re.I)
@@ -312,8 +313,8 @@ class Answerer:
                 continue
             if it.hours and not TIME_RE.search(c.text):
                 continue
-            if (it.rate or it.fee) and s.expired(cid, si):
-                continue
+            if s.expired(cid, si) and not HISTORY_RE.search(question):
+                continue   # an ended offer never answers a question about today
             best = (sc, cid)
             break
         if best is None or self.coverage(question, best[1]) < MIN_COVERAGE:
@@ -389,7 +390,7 @@ class Answerer:
     def _tier_fits(self, question: str, c: Chunk) -> bool:
         """A rate answer must match the term / amount the member named; otherwise the site doesn't say."""
         ql = _strip_dates(question).lower()
-        body = f"{c.ctx} {c.text}".lower()
+        body = f"{c.url} {c.ctx} {c.text}".lower()   # the URL carries scope (/business-rates)
         for pat, _ in QUALIFIERS:
             if re.search(pat, ql) and not re.search(pat, body):
                 return False
