@@ -30,7 +30,8 @@ source kind and an authority, plus a publication date when it is a press release
 covers chunk text + context + page title.
 
 **Facts and conflicts at ingest.** Every table row and `label: value` line gets a *fact key*: product scope +
-its qualifier cells (term, balance or loan-amount tier, model-year tier, rate vs APY vs APR column). Model-year
+its qualifier cells (term, balance or loan-amount tier, model-year tier, rate vs APY vs APR column; opening-hours rows
+use branch + day, see "Extending" below). Model-year
 ranges are aliased by their rank in the table, so "2024-27" on the rate sheet and "2023-26" on a stale page are
 the same fact (the newest tier). Inside each snapshot view, rows sharing a key but disagreeing on a shared value
 column are resolved by the currency rules below. Losers are *shadowed*: never quoted, never a source.
@@ -110,17 +111,23 @@ refusal). Those cases pass on the pre-change code too. What did not: hours were 
 as qualifiers, so a change of hours never formed a fact group, nothing was shadowed and `conflicts()` stayed
 silent. The month-name effective date ("effective April 6, 2026") was also ignored.
 
-Files changed for the family (about 60 lines, no new module and no plugin layer):
+Files changed for the family (about 110 lines, no new module and no plugin layer):
 
-- `submission/bankgpt/chunker.py`: `hours_cells()` recognises an hours row (a time-range or "Closed" cell, at
-  least one real time). `EFFECTIVE_RE` also reads month-name dates, but only for hours tables, so rate tables keep
-  their M/D/YYYY rule.
+- `submission/bankgpt/chunker.py`: `hours_cells()` recognises an hours row: a time-range cell with a.m./p.m. or
+  noon, or "Closed" in a table whose other rows carry times. `norm_hours()` writes every time as `H:MMam/pm`, so
+  "9 a.m.-5 p.m." and "9:00 AM to 5:00 PM" are one value. Month-name effective dates ("effective April 6, 2026")
+  are read for hours tables only, so rate tables keep their M/D/YYYY rule.
 - `submission/bankgpt/store.py`: an hours row's fact key is `hours | <branch> | <day>`. The branch is the nearest
-  heading naming a branch/office/location, so the same branch on `/locations` and on its own page is one fact,
-  and two branches are never a conflict. Its values are the normalised times per column.
-- `submission/bankgpt/conflicts.py`: hours values and topics are formatted as times, not percentages.
-- `submission/bankgpt/answer.py`: a one-line fix for a doubled full stop after "p.m.".
-- `tests/test_branch_hours.py`: the scenario (15 tests).
+  heading that names one ("Main Street Branch"), or else the nearest specific heading ("## Downtown" on an index
+  page). Generic words (branch, location, hours, lobby, drive-up…) are dropped, so the same branch on
+  `/locations` and on its own page is one fact, a "## Branch Hours" heading names no branch, and two branches are
+  never a conflict. The values are the times per service (lobby or drive-up, taken from the column header or else
+  the table's heading), so separate lobby and drive-up tables on one page are separate facts.
+- `submission/bankgpt/conflicts.py`: hours values and topics are formatted as times ("main street hours:
+  saturday"), with the branch kept in the dedupe label.
+- `submission/bankgpt/answer.py`: the hours gate also accepts "Closed" from an hours table, and a one-line fix
+  for a doubled full stop after "p.m.".
+- `tests/test_branch_hours.py`: the scenario plus the keying edge cases found at the quality gate.
 
 The currency rules apply as written: the newest effective date wins, then the page that is present, then
 authority. Public score, conflicts and every existing test are unchanged (0.7705, 32 conflicts, 12/12 gold recall).
