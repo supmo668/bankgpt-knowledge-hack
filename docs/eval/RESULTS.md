@@ -66,6 +66,29 @@ Read these honestly:
 - The selftest exposed three generalisation bugs that the public set hides: a refusal threshold tied to corpus
   size, pages missing from a later crawl, and `label: value` facts. It scored 0.178 before the fixes.
 
+## Refusal diagnostics (no threshold)
+
+Computed by `scripts/eval_report.py` (`diagnostics()`, unit-tested in `tests/test_diagnostics.py`) and written to
+`latest.md` on every run. They are diagnostics only: not part of the score, no target. "Refused" is the scorer's own
+test (`confident=False`, or refusal wording in the text).
+
+- **Unsupported-confident rate** = confident answers the evidence does not support ÷ confident answers on gradable
+  items. Unsupported means the answer hits none of `must_include`, hits a `must_not_include` trap, or answers a
+  `should_refuse` item. Items with neither `must_include` nor `should_refuse` (dup-005) can't be graded and are left
+  out. The rate is undefined when there are no confident answers.
+- **Wrongly-refused rate** = refusals ÷ answerable items (every item that is not `should_refuse`).
+
+| Suite | Unsupported-confident rate | Wrongly-refused rate (answerable) |
+|---|---|---|
+| public | 0.222 (8/36) | 0.000 (0/37) |
+| dev | 0.000 (0/24) | 0.000 (0/24) |
+| blind | 0.118 (2/17) | 0.000 (0/16) |
+| selftest | 0.000 (0/4) | 0.000 (0/4) |
+
+The system refuses only when nothing passes its gates and never refuses an answerable public item. Its errors are
+confident misses: the 8 public ones are the synthesis / other-paragraph / link-target items listed under "Known
+misses" below, and the 2 blind ones are the boat-loan tier and lost-card phone items described above.
+
 ## Conflicts
 
 `conflicts()` returns 32 entries. Against our gold list (`conflicts_gold.json`, 12 contradictions built by hand
