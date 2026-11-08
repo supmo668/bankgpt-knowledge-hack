@@ -1,14 +1,22 @@
 """Versioned fact store: every chunk of every snapshot, deduplicated, with a BM25 inverted index.
 
 A chunk is identified by (url, context, text). Each chunk carries a bitmask of the snapshots it
-appeared in, so `as_of` selection is a bit test and a newer snapshot never overwrites an older one.
+appeared in, so a newer snapshot never overwrites an older one.
+
+Time model (v2, see NOTES.md "Validity intervals"): the store answers from *views*. Every crawl is a view
+dated on its `taken_on`. Between two crawls, a table whose next crawl states an effective date inside the
+gap, or an offer whose end date falls inside it, opens an *interval view* on that date: the earlier crawl
+with the newer table version swapped in (and ended offers closed). `view_for(as_of)` picks the newest view
+dated on or before `as_of`, so an `as_of` between crawls lands on the stated effective date. On top of the
+views, every fact key has a timeline of versions with `valid_from` / `valid_to` (`Store.timeline`).
 """
 from __future__ import annotations
 
 import math
 import re
 from collections import defaultdict
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Optional
 
 from .chunker import Chunk, PageInfo, chunk_page, hours_cells, page_info
@@ -151,12 +159,47 @@ def _short_path(url: str) -> str:
     return re.sub(r"^https?://[^/]+", "", url) or "/"
 
 
+def _fmt_vals(v: tuple) -> str:
+    return ", ".join(f"{col} " + "/".join(f"{n:g}" if isinstance(n, float) else str(n) for n in nums)
+                     for col, nums in v)
+
+
+@dataclass
+class View:
+    """One state of the site: a crawl (`snap`), or an interval view between crawl `snap` and crawl `nxt`."""
+    date: str                  # ISO date the view starts
+    snap: int                  # snapshot index the view is based on
+    nxt: Optional[int] = None  # interval views: the later crawl whose dated tables were swapped in
+    swapped: tuple = ()        # table keys taken from the later crawl
+    why: str = ""              # what opened the view ("effective 09/25/2026 on /rates")
+
+
+@dataclass
+class FactVersion:
+    """One value of one fact key, with the interval it was the resolved (current) value."""
+    key: str
+    value: tuple
+    valid_from: str            # ISO date
+    valid_to: Optional[str]    # ISO date the next version (or an end date) took over; None = still current
+    url: str
+    snapshot_id: str           # crawl the value was read from
+    effective: Optional[str]   # the date the page states, verbatim
+    closed_reason: str = ""    # why the version closed ("replaced by ... effective ...", "offer ended ...")
+    shadowed: bool = False     # True for a losing copy (stale page) shown while another version was current
+
+
+def _iso(d: date) -> str:
+    return d.isoformat()
+
+
 class Store:
     def __init__(self) -> None:
         self.snapshots: list[tuple[str, str]] = []          # (snapshot_id, taken_on), ingest order
+        self.views: list[View] = []                          # view id -> View (bit position in chunk_view)
+        self.snap_view: list[int] = []                       # snapshot index -> its crawl view id
         self.chunks: list[Chunk] = []
         self.chunk_mask: list[int] = []                      # snapshots whose crawl contained the chunk
-        self.chunk_view: list[int] = []                      # views (as_of = snapshot i) where it is visible
+        self.chunk_view: list[int] = []                      # bitmask of view ids where the chunk is visible
         self.url_version: dict[str, int] = {}                # url -> newest snapshot that crawled it
         self.chunk_len: list[int] = []
         self.chunk_tf: list[dict] = []
@@ -167,8 +210,10 @@ class Store:
         self.table_rows: dict[str, list[int]] = defaultdict(list)
         self.url_chunks: dict[str, list[int]] = defaultdict(list)
         self._idf: dict[str, float] = {}
-        self.shadowed: dict[int, set] = {}                   # snapshot -> row chunks that lost their fact
-        self.fact_groups: dict[int, dict] = {}               # snapshot -> fact key -> [cid]
+        self.shadowed: dict[int, set] = {}                   # view -> row chunks that lost their fact
+        self.fact_groups: dict[int, dict] = {}               # view -> fact key -> [cid]
+        self.winners: dict[int, dict] = {}                   # view -> fact key -> winning cid
+        self._timelines: Optional[dict] = None
         self._avglen = 1.0
 
     # ------------------------------------------------------------------ ingest
@@ -204,21 +249,103 @@ class Store:
                     self.url_chunks[c.url].append(cid)
                 self.chunk_mask[cid] |= bit
             self.url_version[p.url] = si
-        # the view at snapshot i = the newest crawled version of every page seen so far (a page missing from
-        # one crawl is not deleted; it is carried forward, with a penalty at ranking time)
+        # the crawl view = the newest crawled version of every page seen so far (a page missing from one
+        # crawl is not deleted; it is carried forward, with a penalty at ranking time)
+        prev_view = self.snap_view[-1] if self.snap_view else None
+        vid = self._new_view(View(date=taken_on, snap=si))
+        self.snap_view.append(vid)
+        vbit = 1 << vid
         for cid, c in enumerate(self.chunks):
             if self.chunk_mask[cid] >> self.url_version[c.url] & 1:
-                self.chunk_view[cid] |= bit
-        self._resolve_facts(si)
+                self.chunk_view[cid] |= vbit
+        self._resolve_facts(vid)
+        if prev_view is not None:
+            self._interval_views(prev_view, vid)
+        self._timelines = None
         self._finalize()
         return si
 
+    # ------------------------------------------------------------------ views
+    def _new_view(self, v: View) -> int:
+        self.views.append(v)
+        return len(self.views) - 1
+
+    def view_date(self, v: int) -> str:
+        return self.views[v].date
+
+    def view_sid(self, v: int, cid: Optional[int] = None) -> str:
+        """Snapshot id to cite for view `v` (for a swapped-in row of an interval view: the later crawl)."""
+        vw = self.views[v]
+        if cid is not None and vw.nxt is not None and not self.chunk_mask[cid] >> vw.snap & 1 \
+                and self.chunk_mask[cid] >> vw.nxt & 1:
+            return self.snapshots[vw.nxt][0]
+        return self.snapshots[vw.snap][0]
+
+    def crawl_views(self) -> list[int]:
+        return list(self.snap_view)
+
+    def _table_versions(self, vid: int) -> dict[str, frozenset]:
+        bit = 1 << vid
+        out: dict[str, set] = defaultdict(set)
+        for t, cids in self.table_rows.items():
+            for cid in cids:
+                if self.chunk_view[cid] & bit:
+                    out[t].add(cid)
+        return {t: frozenset(x) for t, x in out.items()}
+
+    def _interval_views(self, va: int, vb: int) -> None:
+        """Interval views between crawl views `va` (older) and `vb`: one per date inside the gap on which a
+        table of the later crawl states it took effect, or an offer visible in the earlier crawl ended."""
+        a, b = self.views[va], self.views[vb]
+        da, db = date.fromisoformat(a.date), date.fromisoformat(b.date)
+        ta, tb = self._table_versions(va), self._table_versions(vb)
+        swaps: list[tuple[date, str, str]] = []
+        for t, rows in tb.items():
+            old = ta.get(t)
+            if old == rows:
+                continue
+            effs = [self.chunks[c].effective for c in rows if self.chunks[c].effective]
+            if not effs:
+                continue   # undated new version: valid from the crawl that first shows it
+            eff = max(effs, key=_eff_date)
+            e = _eff_date(eff)
+            if da < e < db:
+                swaps.append((e, t, eff))
+            # e <= da: the earlier crawl still showed the old version on a date the new one claims to cover;
+            # the observation wins and the switch stays at the later crawl (see NOTES.md)
+        ends: list[tuple[date, str]] = []
+        abit = 1 << va
+        for cid, c in enumerate(self.chunks):
+            if c.ends and self.chunk_view[cid] & abit:
+                try:
+                    end = date.fromisoformat(c.ends)
+                except ValueError:
+                    continue
+                nxt = end + timedelta(days=1)
+                if da < nxt < db:
+                    ends.append((nxt, c.url))
+        dates = sorted({d for d, _, _ in swaps} | {d for d, _ in ends})
+        for d in dates:
+            swap_now = sorted(t for e, t, _ in swaps if e <= d)
+            why = "; ".join(dict.fromkeys(
+                [f"effective {eff} on {_short_path(t.split('#')[0])}" for e, t, eff in swaps if e == d] +
+                [f"offer on {_short_path(u)} ended {(d - timedelta(days=1)).isoformat()}" for e, u in ends if e == d]))
+            vid = self._new_view(View(date=_iso(d), snap=a.snap, nxt=b.snap, swapped=tuple(swap_now), why=why))
+            bit = 1 << vid
+            drop = set().union(*(ta.get(t, frozenset()) for t in swap_now)) if swap_now else set()
+            add = set().union(*(tb[t] for t in swap_now)) if swap_now else set()
+            for cid in range(len(self.chunks)):
+                if (self.chunk_view[cid] & abit and cid not in drop) or cid in add:
+                    self.chunk_view[cid] |= bit
+            self._resolve_facts(vid)
+
     def claim(self, cid: int, si: int) -> tuple:
-        """How strongly a row claims to be current: effective date, then authority, then recency."""
+        """How strongly a row claims to be current in view `si`: offer live, effective date, page present,
+        authority, publication date, then recency."""
         c = self.chunks[cid]
         info = self.pages[c.url]
-        present = bool(self.page_snaps[c.url] >> si & 1)
-        live = not (c.ends and c.ends < self.snapshots[si][1])
+        present = self.present(c.url, si)
+        live = not (c.ends and c.ends < self.view_date(si))
         mask = self.chunk_mask[cid]
         first_seen = (mask & -mask).bit_length()      # snapshot this exact value first appeared in
         return (live, _eff_date(c.effective), present, info.authority, info.pub_date or date.max, first_seen, cid)
@@ -242,12 +369,16 @@ class Store:
         return f"the newer value (first seen in a later crawl than {_short_path(lc.url)})"
 
     def present(self, url: str, si: int) -> bool:
-        return bool(self.page_snaps.get(url, 0) >> si & 1)
+        """The page was crawled for view `si` (its base crawl, or the later crawl of an interval view)."""
+        v = self.views[si]
+        m = self.page_snaps.get(url, 0)
+        return bool(m >> v.snap & 1) or (v.nxt is not None and bool(m >> v.nxt & 1)
+                                         and any(t.split("#")[0] == url for t in v.swapped))
 
     def expired(self, cid: int, si: int) -> bool:
-        """An offer whose stated end date is before the snapshot date."""
+        """An offer whose stated end date is before the view date."""
         e = self.chunks[cid].ends
-        return bool(e) and e < self.snapshots[si][1]
+        return bool(e) and e < self.view_date(si)
 
     def _resolve_facts(self, si: int) -> None:
         bit = 1 << si
@@ -258,14 +389,17 @@ class Store:
                 if k and row_values(c):
                     groups[k].append(cid)
         shadow = set()
+        winners = {}
         for k, cids in groups.items():
+            win = max(cids, key=lambda x: self.claim(x, si))
+            winners[k] = win
             if len({row_values(self.chunks[x]) for x in cids}) < 2:
                 continue
-            win = max(cids, key=lambda x: self.claim(x, si))
             wv = row_values(self.chunks[win])
             shadow.update(x for x in cids if values_disagree(row_values(self.chunks[x]), wv))
         self.shadowed[si] = shadow
         self.fact_groups[si] = dict(groups)
+        self.winners[si] = winners
 
     def _finalize(self) -> None:
         n = len(self.chunks) or 1
@@ -274,16 +408,118 @@ class Store:
 
     # ------------------------------------------------------------------ query
     def snapshot_for(self, as_of: Optional[str]) -> int:
-        """Newest snapshot taken on or before `as_of` (the oldest one if as_of predates all)."""
+        """Crawl view of the newest snapshot taken on or before `as_of` (the oldest if as_of predates all)."""
         if not self.snapshots:
             return -1
         if not as_of:
-            return max(range(len(self.snapshots)), key=lambda i: self.snapshots[i][1])
+            return self.snap_view[max(range(len(self.snapshots)), key=lambda i: (self.snapshots[i][1], i))]
         best = None
         for i, (_, taken) in enumerate(self.snapshots):
-            if taken <= as_of[:10] and (best is None or taken > self.snapshots[best][1]):
+            if taken <= as_of[:10] and (best is None or taken >= self.snapshots[best][1]):
                 best = i
-        return best if best is not None else min(range(len(self.snapshots)), key=lambda i: self.snapshots[i][1])
+        if best is None:
+            best = min(range(len(self.snapshots)), key=lambda i: self.snapshots[i][1])
+        return self.snap_view[best]
+
+    def view_for(self, as_of: Optional[str]) -> int:
+        """The view in force on `as_of`: the newest crawl or interval view dated on or before it. `None` = the
+        latest crawl; a date before the first crawl = the first crawl."""
+        base = self.snapshot_for(as_of)
+        if base < 0 or not as_of:
+            return base
+        d = as_of[:10]
+        best = base
+        for vid, v in enumerate(self.views):
+            if v.nxt is not None and v.snap == self.views[base].snap and v.date <= d \
+                    and v.date >= self.views[best].date:
+                best = vid
+        return best
+
+    # ------------------------------------------------------------------ fact timelines
+    def timeline(self, key: str) -> list[FactVersion]:
+        """Every version of one fact key, oldest first: the resolved value per interval, plus the shadowed
+        copies (stale pages) that were visible but lost, each closed with the rule that beat it."""
+        return self.timelines().get(key, [])
+
+    def timelines(self) -> dict[str, list[FactVersion]]:
+        if self._timelines is None:
+            self._timelines = self._build_timelines()
+        return self._timelines
+
+    def facts_at(self, as_of: Optional[str]) -> dict[str, FactVersion]:
+        """The current version of every fact key on `as_of` (the interval that contains it)."""
+        d = (as_of or self.view_date(self.snapshot_for(None)))[:10]
+        out = {}
+        for k, vs in self.timelines().items():
+            for fv in vs:
+                if not fv.shadowed and fv.valid_from <= d and (fv.valid_to is None or d < fv.valid_to):
+                    out[k] = fv
+        return out
+
+    def _build_timelines(self) -> dict[str, list[FactVersion]]:
+        order = sorted(range(len(self.views)), key=lambda v: (self.views[v].date, v))
+        keys = set()
+        for v in order:
+            keys.update(self.winners.get(v, {}))
+        out: dict[str, list[FactVersion]] = {}
+        for k in keys:
+            runs: list[list] = []          # [value, first view, last view, winning cid]
+            gone_after: dict[int, int] = {}
+            for v in order:
+                win = self.winners.get(v, {}).get(k)
+                if win is None:
+                    if runs and runs[-1][0] is not None:
+                        runs.append([None, v, v, None])
+                    continue
+                val = row_values(self.chunks[win])
+                if runs and runs[-1][0] == val:
+                    runs[-1][2] = v
+                else:
+                    runs.append([val, v, v, win])
+            versions: list[FactVersion] = []
+            prev_last = None
+            for i, (val, first, last, win) in enumerate(runs):
+                if val is None:
+                    prev_last = last
+                    continue
+                c = self.chunks[win]
+                start = self.view_date(first)
+                eff = _eff_date(c.effective)
+                if eff != date.min and _iso(eff) < start and (prev_last is None or _iso(eff) > self.view_date(prev_last)):
+                    start = _iso(eff)   # stated effective date, when no earlier crawl contradicts it
+                nxt = runs[i + 1] if i + 1 < len(runs) else None
+                end, reason = None, ""
+                if nxt is not None:
+                    end = self.view_date(nxt[1])
+                    if nxt[0] is None:
+                        reason = "no longer on the site"
+                    else:
+                        nc = self.chunks[nxt[3]]
+                        reason = (f"replaced by {_fmt_vals(nxt[0])} on {_short_path(nc.url)}"
+                                  + (f" (effective {nc.effective})" if nc.effective else ""))
+                if c.ends and (end is None or c.ends < end):
+                    end, reason = _iso(date.fromisoformat(c.ends) + timedelta(days=1)), f"offer ended {c.ends}"
+                versions.append(FactVersion(k, val, start, end, c.url, self.view_sid(first, win), c.effective,
+                                            reason))
+                prev_last = last
+            # losing copies that were visible while another version was current: stored, closed, with the reason
+            spans: dict[int, list] = {}      # cid -> [first view, last view, winner at last view]
+            for v in order:
+                win = self.winners.get(v, {}).get(k)
+                sh = self.shadowed.get(v, set())
+                for cid in self.fact_groups.get(v, {}).get(k, []):
+                    if cid in sh:
+                        spans.setdefault(cid, [v, v, win])[1:] = [v, win]
+            for cid, (first, last, win) in sorted(spans.items(), key=lambda kv: (self.view_date(kv[1][0]), kv[0])):
+                lc = self.chunks[cid]
+                after = [v for v in order if self.view_date(v) > self.view_date(last)]
+                versions.append(FactVersion(k, row_values(lc), self.view_date(first),
+                                            self.view_date(after[0]) if after else None, lc.url,
+                                            self.view_sid(first, cid), lc.effective,
+                                            f"shadowed: loses to {_short_path(self.chunks[win].url)} on "
+                                            f"{self.why_wins(win, cid, last)}", shadowed=True))
+            out[k] = versions
+        return out
 
     def idf(self, t: str) -> float:
         return self._idf.get(t, math.log(1 + len(self.chunks) + 0.5))

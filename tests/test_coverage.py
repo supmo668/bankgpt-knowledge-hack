@@ -91,7 +91,12 @@ class AsOfEdges(unittest.TestCase):
     def test_edges(self):
         self.assertEqual(self.sid("2026-01-01"), "01")            # before the first snapshot -> oldest
         self.assertEqual(self.sid("2026-05-12"), "01")            # exact date is inclusive
-        self.assertEqual(self.sid("2026-09-27"), "01")            # the day before the next snapshot
+        # v2 interval model: between crawls the stated effective date (09/01/2026) is the switch, not the crawl
+        self.assertEqual(self.sid("2026-08-31"), "01")            # the day before the stated effective date
+        self.assertEqual(self.sid("2026-09-01"), "02")            # effective date inside the gap: newer table
+        self.assertEqual(self.sid("2026-09-27"), "02")            # the day before the next snapshot
+        self.assertIn("2.90%", self.ks.answer("What is the 12 month certificate APY?", as_of="2026-08-31").text)
+        self.assertIn("3.40%", self.ks.answer("What is the 12 month certificate APY?", as_of="2026-09-01").text)
         self.assertEqual(self.sid("2026-09-28"), "02")
         self.assertEqual(self.sid("2026-05-12T10:00:00Z"), "01")  # timestamps are accepted
         self.assertEqual(self.sid(None), "02")

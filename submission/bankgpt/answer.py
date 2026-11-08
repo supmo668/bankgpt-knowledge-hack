@@ -195,7 +195,7 @@ class Answerer:
         raw = s.bm25(qtoks, si)
         if not raw:
             return []
-        ref = date.fromisoformat(s.snapshots[si][1])
+        ref = date.fromisoformat(s.view_date(si))
         ql = question.lower()
         terms = [(int(n), u[0]) for n, u in TERM_RE.findall(ql)]
         q_money = [v for v in money_values(question) if v >= 50]
@@ -547,14 +547,13 @@ class Answerer:
 
     def _sources(self, used: list[int], ranked, si: int) -> list:
         s = self.s
-        sid = s.snapshots[si][0]
         out, seen = [], set()
 
         def add(cid):
             c = s.chunks[cid]
             if c.url not in seen and len(out) < 6:
                 seen.add(c.url)
-                out.append((c.url, sid, c.text[:200]))
+                out.append((c.url, s.view_sid(si, cid), c.text[:200]))
 
         for cid in used:
             add(cid)
@@ -589,4 +588,4 @@ class Answerer:
             return Result(REFUSAL_TEXT, confident=False)
         url = max(page_score, key=lambda u: (page_score[u], u))
         clean = url.split("?")[0]
-        return Result(f"You can find it here: {clean}", sources=[(clean, s.snapshots[si][0], None)])
+        return Result(f"You can find it here: {clean}", sources=[(clean, s.view_sid(si), None)])

@@ -86,8 +86,8 @@ class ConflictFinder:
         s = self.s
         latest = s.snapshot_for(None)
         per_key: dict[str, dict[tuple, list]] = defaultdict(lambda: defaultdict(list))
-        for si, groups in s.fact_groups.items():
-            for key, cids in groups.items():
+        for si in s.crawl_views():
+            for key, cids in s.fact_groups.get(si, {}).items():
                 for cid in cids:
                     c = s.chunks[cid]
                     if s.pages[c.url].kind not in RATE_PAGE_KINDS:
@@ -128,19 +128,19 @@ class ConflictFinder:
                     continue
                 si, cid = max(occ, key=lambda t: t[0])
                 losers.append((v, si, cid))
-            sources = [(wc.url, s.snapshots[last_si][0], wc.text[:200])]
+            sources = [(wc.url, s.view_sid(last_si), wc.text[:200])]
             for v, si, cid in losers:
-                sources.append((s.chunks[cid].url, s.snapshots[si][0], s.chunks[cid].text[:200]))
+                sources.append((s.chunks[cid].url, s.view_sid(si), s.chunks[cid].text[:200]))
             reasons = []
             for v, si, cid in losers:
                 lc = s.chunks[cid]
                 if si == last_si:
                     reasons.append(f"{_path(lc.url)} shows {_fmt_values(v)} - loses on {s.why_wins(win, cid, si)}")
                 else:
-                    reasons.append(f"{_fmt_values(v)} was on {_path(lc.url)} in {s.snapshots[si][0]} and was "
+                    reasons.append(f"{_fmt_values(v)} was on {_path(lc.url)} in {s.view_sid(si)} and was "
                                    f"superseded by a later crawl")
             reason = (f"current value from {_path(wc.url)} ({s.pages[wc.url].kind}, effective "
-                      f"{wc.effective or 'undated'}) in {s.snapshots[last_si][0]}; " + "; ".join(reasons))
+                      f"{wc.effective or 'undated'}) in {s.view_sid(last_si)}; " + "; ".join(reasons))
             values = [_fmt_values(v) for v, _, _ in losers] + [_fmt_values(wv)]
             out.append(ConflictRec(topic=topic, values=values, sources=sources, resolution=_fmt_values(wv),
                                    reason=reason, priority=2 if same_snap_stale else 1, fact=_mirror_key(label)))
@@ -149,8 +149,7 @@ class ConflictFinder:
     # ------------------------------------------------------------------ text facts
     def _dated_paragraphs(self):
         s = self.s
-        latest = s.snapshot_for(None)
-        bit = 1 << latest
+        bit = 1 << s.views[s.snapshot_for(None)].snap   # chunk_mask is per crawl (snapshot index), not per view
         for cid, c in enumerate(s.chunks):
             if c.kind != "para" or not s.chunk_mask[cid] & bit:
                 continue
@@ -161,7 +160,7 @@ class ConflictFinder:
 
     def _count_conflicts(self) -> list[ConflictRec]:
         s = self.s
-        sid = s.snapshots[s.snapshot_for(None)][0]
+        sid = s.view_sid(s.snapshot_for(None))
         stmts = []
         for cid, c, info in self._dated_paragraphs():
             for m in COUNT_RE.finditer(c.text):
@@ -191,7 +190,7 @@ class ConflictFinder:
 
     def _ordinal_conflicts(self) -> list[ConflictRec]:
         s = self.s
-        sid = s.snapshots[s.snapshot_for(None)][0]
+        sid = s.view_sid(s.snapshot_for(None))
         per_org: dict[str, list] = defaultdict(list)
         for cid, c, info in self._dated_paragraphs():
             if not info.pub_date:
