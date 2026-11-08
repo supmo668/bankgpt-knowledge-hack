@@ -7,10 +7,13 @@ from datetime import date
 from typing import Optional
 from urllib.parse import urlparse
 
-from .text import clean_inline, parse_date_line
+from .text import clean_inline, parse_date_line, year_range
 
 EFFECTIVE_RE = re.compile(r"effective (?:as of )?(\d{1,2}/\d{1,2}/\d{2,4})", re.I)
 BOLD_LABEL_RE = re.compile(r"^\*\*([^*]{1,40})\*\*:?$")
+GENERIC_HEADER_RE = re.compile(r"(?i)^(term|terms?|account( type)?|certificate|program|card type|loan (program|amount|type)|"
+                               r"ira type|privileges|product|type|balance( tier)?|rate|apr|apy|tier|amount|col\d*|"
+                               r"model year|vehicle|description|fee|service|item|)$")
 SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z“\"(])")
 NOISE_LINE_RE = re.compile(r"^(\* \* \*|---+|Loading locations\.\.\.|Go|Cancel|Continue.*Cancel|\d+ min read)$", re.I)
 
@@ -25,6 +28,7 @@ class Chunk:
     cells: dict = field(default_factory=dict)
     effective: Optional[str] = None  # "Rates are effective as of ..." attached to a table
     links: list = field(default_factory=list)
+    key_alias: dict = field(default_factory=dict)  # qualifier cell -> canonical form (model-year tiers)
 
 
 @dataclass
@@ -80,6 +84,22 @@ def page_info(url: str, title: str, markdown: str, fetched_at: str) -> PageInfo:
     p = urlparse(url)
     return PageInfo(url=url, path=(p.path.rstrip("/") or "/").lower(), title=title.split("|")[0].strip(),
                     kind=kind, authority=auth, pub_date=pub, fetched_at=fetched_at)
+
+
+def _alias_year_tiers(rows: list[Chunk]) -> None:
+    """'2024-27 Model Year' on the rate sheet and '2023-26 Model Year' on a stale page are the same fact:
+    the newest model-year tier. Alias each year-range cell to its rank in the table (0 = newest)."""
+    found = []
+    for r in rows:
+        first = next(iter(r.cells.values()), "")
+        yr = year_range(first)
+        if yr and re.search(r"(?i)model|year|older", first):
+            found.append((yr, first, r))
+    ranges = sorted({f[0] for f in found}, key=lambda x: (-x[1], -x[0]))
+    if len(ranges) < 2:
+        return
+    for yr, first, r in found:
+        r.key_alias[first] = f"model-year tier {ranges.index(yr)}"
 
 
 def _split_row(line: str) -> list[str]:
@@ -151,6 +171,9 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             tkey = f"{url}#t{tcount}"
             pending_table = []
             ctx = " > ".join(x for x in (head_ctx(), section, caption) if x)
+            h0 = header[0].strip(" *") if header else ""
+            if h0 and not GENERIC_HEADER_RE.match(h0) and h0.lower() not in ctx.lower():
+                ctx = f"{ctx} > {h0}" if ctx else h0   # header names the product ("Business Platinum Visa | APR")
             while i < n and lines[i].strip().startswith("|"):
                 cells = [clean_inline(c)[0] for c in _split_row(lines[i])]
                 i += 1
@@ -164,6 +187,7 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
                 c = Chunk(url, txt, ctx, "row", table=tkey, cells=pairs)
                 pending_table.append(c)
                 chunks.append(c)
+            _alias_year_tiers(pending_table)
             continue
         if not s:
             flush_para()

@@ -28,20 +28,34 @@ def _eff_date(s: Optional[str]) -> date:
         return date.min
 
 
+FAMILY_RE = re.compile(r"(?i)\b(atv|snowmobile|jet ski|boat|rv|recreational|motorcycle loans? only|auto|vehicle)")
+
+
 def row_key(c: Chunk) -> Optional[str]:
     """Fact key of a table row = its qualifier cells (term, tier, product), not its values."""
     if c.kind != "row" or not c.cells:
         return None
-    quals = [v for k, v in c.cells.items() if not VALUE_CELL_RE.search(v) or re.search(r"(?i)month|year|tier|\+|or less|–|-", v)
+    quals = [c.key_alias.get(v, v) for k, v in c.cells.items()
+             if not re.search(r"(?i)^min|minimum|payment", k) and v.strip().lower() not in ("none", "n/a", "na", "—", "-") and not VALUE_CELL_RE.search(v) or re.search(r"(?i)month|year|tier|\+|or less|–|-", v)
              and not re.search(r"%", v)]
     if not quals:
         return None
     q = " | ".join(quals).lower()
     q = re.sub(r"(\d)[\s,](?=\d{3}\b)", r"\1", q.replace("–", "-"))
     q = re.sub(r"\s*-\s*", "-", re.sub(r"[\s,]+", " ", q)).strip()
-    if len(re.findall(r"[a-z]{3,}", q)) < 3:
-        q = (c.ctx.split(" > ")[-1].lower() + " | " + q) if c.ctx else q
+    first = next(iter(c.cells.values()), "")
+    if len(re.findall(r"[a-z]{3,}", q)) < 3 or not re.search(r"\d", first):
+        # a generic row label ("Variable Interest Rate", "60 Month") needs its table's product name
+        cap = c.ctx.split(" > ")[-1].lower() if c.ctx else ""
+        # "Regular" vs "Regular Certificates": captions drift between crawls; keep only the distinctive words
+        cap = " ".join(w for w in re.findall(r"[a-z0-9$&']+", cap)
+                       if w not in ("certificates", "certificate", "accounts", "account", "rates", "rate", "loans"))
+        if cap and cap not in q:
+            q = f"{cap} | {q}"
     scope = "business" if "business" in c.url.lower() else "personal"
+    if c.key_alias:
+        fam = FAMILY_RE.search(f"{c.ctx} {c.url}")
+        scope += f" | {fam.group(1).lower() if fam else 'other'}"
     return f"{scope} | {q}"
 
 
