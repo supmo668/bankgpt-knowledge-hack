@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" width="960" height="520" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title id="t">Architecture and flow</title>
+<desc id="d">Ingest, versioned fact store, as-of resolution, answer; conflicts are found at ingest and answers refuse when no passage passes the gates.</desc>
+<rect width="960" height="520" fill="#fcfcfb"/>
+<text x="32.0" y="40.0" font-size="20" fill="#0b0b0b" text-anchor="start" font-weight="600">How an answer is made</text>
+<text x="32.0" y="64.0" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal">Ingest is where history is kept and conflicts are found; answer() only reads.</text>
+<rect x="32" y="100" width="190" height="150" rx="8" fill="#ffffff" stroke="#e4e3df" stroke-width="1.5"/>
+<rect x="32" y="100" width="5" height="150" rx="2" fill="#2a78d6"/>
+<text x="48.0" y="124.0" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="600">1 · Ingest</text>
+<text x="48.0" y="146.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">one call per snapshot,</text>
+<text x="48.0" y="164.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">oldest first</text>
+<text x="48.0" y="182.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">chunk: table rows,</text>
+<text x="48.0" y="200.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">label: value, sentences</text>
+<text x="48.0" y="218.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">page kind + authority</text>
+<rect x="252" y="100" width="220" height="150" rx="8" fill="#ffffff" stroke="#e4e3df" stroke-width="1.5"/>
+<rect x="252" y="100" width="5" height="150" rx="2" fill="#2a78d6"/>
+<text x="268.0" y="124.0" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="600">2 · Versioned fact store</text>
+<text x="268.0" y="146.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">chunk stored once with a</text>
+<text x="268.0" y="164.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">bitmask of crawls</text>
+<text x="268.0" y="182.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">(never overwritten)</text>
+<text x="268.0" y="200.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">fact key = scope +</text>
+<text x="268.0" y="218.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">term / tier / rate·APY·APR</text>
+<rect x="502" y="100" width="190" height="150" rx="8" fill="#ffffff" stroke="#e4e3df" stroke-width="1.5"/>
+<rect x="502" y="100" width="5" height="150" rx="2" fill="#2a78d6"/>
+<text x="518.0" y="124.0" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="600">3 · As-of resolution</text>
+<text x="518.0" y="146.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">view = newest snapshot</text>
+<text x="518.0" y="164.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">≤ as_of (or latest)</text>
+<text x="518.0" y="182.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">currency rules pick one</text>
+<text x="518.0" y="200.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">value per fact key;</text>
+<text x="518.0" y="218.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">losers are shadowed</text>
+<rect x="722" y="100" width="206" height="150" rx="8" fill="#ffffff" stroke="#e4e3df" stroke-width="1.5"/>
+<rect x="722" y="100" width="5" height="150" rx="2" fill="#2a78d6"/>
+<text x="738.0" y="124.0" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="600">4 · Answer</text>
+<text x="738.0" y="146.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">intent + BM25 × authority</text>
+<text x="738.0" y="164.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">× recency × qualifier fit</text>
+<text x="738.0" y="182.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">gates, then one value</text>
+<text x="738.0" y="200.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">per fact, with sources</text>
+<text x="738.0" y="218.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">and a conflict note</text>
+<rect x="252" y="320" width="220" height="120" rx="8" fill="#ffffff" stroke="#e4e3df" stroke-width="1.5"/>
+<rect x="252" y="320" width="5" height="120" rx="2" fill="#eb6834"/>
+<text x="268.0" y="344.0" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="600">Conflicts at ingest</text>
+<text x="268.0" y="366.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">same key, different value</text>
+<text x="268.0" y="384.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">→ one entry per fact</text>
+<text x="268.0" y="402.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">stale pages, rate-sheet</text>
+<text x="268.0" y="420.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">changes, dated claims</text>
+<rect x="722" y="320" width="206" height="120" rx="8" fill="#ffffff" stroke="#e4e3df" stroke-width="1.5"/>
+<rect x="722" y="320" width="5" height="120" rx="2" fill="#eb6834"/>
+<text x="738.0" y="344.0" font-size="15" fill="#0b0b0b" text-anchor="start" font-weight="600">Refusal</text>
+<text x="738.0" y="366.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">nothing passes the gates,</text>
+<text x="738.0" y="384.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">or &lt; 25% of the question</text>
+<text x="738.0" y="402.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">is covered → "I don't</text>
+<text x="738.0" y="420.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">know", no digits</text>
+<line x1="222" y1="175" x2="242" y2="175" stroke="#52514e" stroke-width="1.5"/>
+<polygon points="250,175 242,171 242,179" fill="#52514e"/>
+<line x1="472" y1="175" x2="492" y2="175" stroke="#52514e" stroke-width="1.5"/>
+<polygon points="500,175 492,171 492,179" fill="#52514e"/>
+<line x1="692" y1="175" x2="712" y2="175" stroke="#52514e" stroke-width="1.5"/>
+<polygon points="720,175 712,171 712,179" fill="#52514e"/>
+<line x1="362" y1="250" x2="362" y2="310" stroke="#52514e" stroke-width="1.5"/>
+<polygon points="362,318 358,310 366,310" fill="#52514e"/>
+<line x1="825" y1="250" x2="825" y2="310" stroke="#52514e" stroke-width="1.5"/>
+<polygon points="825,318 821,310 829,310" fill="#52514e"/>
+<text x="370.0" y="290.0" font-size="12" fill="#8a8984" text-anchor="start" font-weight="normal">conflicts()</text>
+<text x="833.0" y="290.0" font-size="12" fill="#8a8984" text-anchor="start" font-weight="normal">gate fails</text>
+<text x="32.0" y="480.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">Tie-break for one fact: offer live → newest effective date → in this crawl → authority → newest publication → latest-crawl value.</text>
+<text x="32.0" y="500.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">Qualifiers (term, tier, rate vs APY vs APR, personal vs business, model year) are different facts, never conflicts.</text>
+</svg>

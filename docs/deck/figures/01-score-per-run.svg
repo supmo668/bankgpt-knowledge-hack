@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" width="960" height="500" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title id="t">Public score per commit</title>
+<desc id="d">Line chart of the public final score for each commit, from 0.093 to 0.771, against the starter baseline 0.093.</desc>
+<rect width="960" height="500" fill="#fcfcfb"/>
+<text x="32.0" y="40.0" font-size="20" fill="#0b0b0b" text-anchor="start" font-weight="600">Public score per commit, from the starter's 0.093</text>
+<text x="32.0" y="64.0" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal">Kit scorer, 40 public questions (no conflicts gold in the kit). Source: docs/eval/RESULTS.md</text>
+<line x1="72" x2="920" y1="380.0" y2="380.0" stroke="#e4e3df"/>
+<text x="62.0" y="384.0" font-size="12" fill="#8a8984" text-anchor="end" font-weight="normal">0.00</text>
+<line x1="72" x2="920" y1="309.0" y2="309.0" stroke="#e4e3df"/>
+<text x="62.0" y="313.0" font-size="12" fill="#8a8984" text-anchor="end" font-weight="normal">0.25</text>
+<line x1="72" x2="920" y1="238.0" y2="238.0" stroke="#e4e3df"/>
+<text x="62.0" y="242.0" font-size="12" fill="#8a8984" text-anchor="end" font-weight="normal">0.50</text>
+<line x1="72" x2="920" y1="167.0" y2="167.0" stroke="#e4e3df"/>
+<text x="62.0" y="171.0" font-size="12" fill="#8a8984" text-anchor="end" font-weight="normal">0.75</text>
+<line x1="72" x2="920" y1="96.0" y2="96.0" stroke="#e4e3df"/>
+<text x="62.0" y="100.0" font-size="12" fill="#8a8984" text-anchor="end" font-weight="normal">1.00</text>
+<line x1="72" x2="920" y1="353.6" y2="353.6" stroke="#52514e" stroke-dasharray="6 4" stroke-width="1.5"/>
+<text x="920.0" y="345.6" font-size="12" fill="#52514e" text-anchor="end" font-weight="normal">starter baseline 0.093</text>
+<polyline points="72.0,353.6 166.2,250.8 260.4,201.1 354.7,192.3 448.9,183.8 543.1,161.0 637.3,161.0 731.6,161.0 825.8,161.0 920.0,161.0" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="72.0" cy="353.6" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>starter: 0.093 (naive starter (baseline))</title></circle>
+<text transform="translate(72.0,398) rotate(-35)" font-size="12" fill="#52514e" text-anchor="end">starter</text>
+<text x="72.0" y="341.6" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">0.093</text>
+<circle cx="166.2" cy="250.8" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>53aeff3: 0.455 (v1: versioned chunk store, authority/recency/qualifier ranking, `as_of`, refusal gate)</title></circle>
+<text transform="translate(166.2,398) rotate(-35)" font-size="12" fill="#52514e" text-anchor="end">53aeff3</text>
+<text x="166.2" y="238.8" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">0.455</text>
+<circle cx="260.4" cy="201.1" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>f4cc944: 0.630 (intent gates (rate/fee/hours/count/link/list), corroborating sources, title boost)</title></circle>
+<text transform="translate(260.4,398) rotate(-35)" font-size="12" fill="#52514e" text-anchor="end">f4cc944</text>
+<text x="260.4" y="189.1" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">0.630</text>
+<circle cx="354.7" cy="192.3" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>9eaa025: 0.661 (fact keys + per-snapshot resolution: stale copies of a fact are shadowed)</title></circle>
+<text transform="translate(354.7,398) rotate(-35)" font-size="12" fill="#52514e" text-anchor="end">9eaa025</text>
+<circle cx="448.9" cy="183.8" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>909847d: 0.691 (sentence chunks, section+caption context, truncation stemming)</title></circle>
+<text transform="translate(448.9,398) rotate(-35)" font-size="12" fill="#52514e" text-anchor="end">909847d</text>
+<circle cx="543.1" cy="161.0" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>35d7844: 0.771 (subject gate + tight rate check (honest refusal), CTA/short penalties)</title></circle>
+<text transform="translate(543.1,398) rotate(-35)" font-size="12" fill="#52514e" text-anchor="end">35d7844</text>
+<text x="543.1" y="149.0" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">0.771</text>
+<circle cx="637.3" cy="161.0" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>6b91ea0: 0.771 (tier/term/qualifier gates for rate questions, dated-latest counts)</title></circle>
+<text transform="translate(637.3,398) rotate(-35)" font-size="12" fill="#52514e" text-anchor="end">6b91ea0</text>
+<circle cx="731.6" cy="161.0" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>1b53661: 0.771 (`conflicts()`: stale pages + cross-snapshot changes + dated text facts)</title></circle>
+<text transform="translate(731.6,398) rotate(-35)" font-size="12" fill="#52514e" text-anchor="end">1b53661</text>
+<circle cx="825.8" cy="161.0" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>bf6cdd4: 0.771 (carry-forward views, label:value facts, expired offers, scale-free refusal)</title></circle>
+<text transform="translate(825.8,398) rotate(-35)" font-size="12" fill="#52514e" text-anchor="end">bf6cdd4</text>
+<circle cx="920.0" cy="161.0" r="5" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2"><title>bbf1e65: 0.771 (conflict notes, one value per fact on term questions)</title></circle>
+<text transform="translate(920.0,398) rotate(-35)" font-size="12" fill="#52514e" text-anchor="end">bbf1e65</text>
+<text x="920.0" y="149.0" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">0.771</text>
+<text x="72.0" y="482.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">0.093 → 0.771: 8.3× the starter. Flat from 35d7844 on: later commits added conflicts() and hardening the public set does not exercise.</text>
+</svg>

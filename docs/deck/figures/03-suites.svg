@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 460" width="960" height="460" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">
+<title id="t">Final score and accuracy per suite</title>
+<desc id="d">Grouped bars: public final 0.753, accuracy 0.770; dev final 0.949, accuracy 1.000; blind final 0.856, accuracy 0.891; selftest final 1.000, accuracy 1.000.</desc>
+<rect width="960" height="460" fill="#fcfcfb"/>
+<text x="32.0" y="40.0" font-size="20" fill="#0b0b0b" text-anchor="start" font-weight="600">Four suites, one scorer</text>
+<text x="32.0" y="64.0" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal">Final = kit weights (accuracy 55, conflicts 15, consistency 15, speed 15). Conflicts use our own gold list.</text>
+<rect x="72" y="80" width="12" height="12" rx="2" fill="#2a78d6"/>
+<text x="90.0" y="91.0" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal">final score</text>
+<rect x="202" y="80" width="12" height="12" rx="2" fill="#eb6834"/>
+<text x="220.0" y="91.0" font-size="13" fill="#52514e" text-anchor="start" font-weight="normal">accuracy</text>
+<line x1="72" x2="920" y1="390.0" y2="390.0" stroke="#e4e3df"/>
+<text x="62.0" y="394.0" font-size="12" fill="#8a8984" text-anchor="end" font-weight="normal">0.00</text>
+<line x1="72" x2="920" y1="320.0" y2="320.0" stroke="#e4e3df"/>
+<text x="62.0" y="324.0" font-size="12" fill="#8a8984" text-anchor="end" font-weight="normal">0.25</text>
+<line x1="72" x2="920" y1="250.0" y2="250.0" stroke="#e4e3df"/>
+<text x="62.0" y="254.0" font-size="12" fill="#8a8984" text-anchor="end" font-weight="normal">0.50</text>
+<line x1="72" x2="920" y1="180.0" y2="180.0" stroke="#e4e3df"/>
+<text x="62.0" y="184.0" font-size="12" fill="#8a8984" text-anchor="end" font-weight="normal">0.75</text>
+<line x1="72" x2="920" y1="110.0" y2="110.0" stroke="#e4e3df"/>
+<text x="62.0" y="114.0" font-size="12" fill="#8a8984" text-anchor="end" font-weight="normal">1.00</text>
+<path d="M113.0,390.0 V183.0 Q113.0,179.0 117.0,179.0 H173.0 Q177.0,179.0 177.0,183.0 V390.0 Z" fill="#2a78d6"><title>public final: 0.753</title></path>
+<text x="145.0" y="171.0" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">0.753</text>
+<path d="M179.0,390.0 V178.3 Q179.0,174.3 183.0,174.3 H239.0 Q243.0,174.3 243.0,178.3 V390.0 Z" fill="#eb6834"><title>public accuracy: 0.770</title></path>
+<text x="211.0" y="166.3" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">0.770</text>
+<text x="178.0" y="412.0" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="normal">public (40, kit)</text>
+<path d="M325.0,390.0 V128.4 Q325.0,124.4 329.0,124.4 H385.0 Q389.0,124.4 389.0,128.4 V390.0 Z" fill="#2a78d6"><title>dev final: 0.949</title></path>
+<text x="357.0" y="116.4" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">0.949</text>
+<path d="M391.0,390.0 V114.0 Q391.0,110.0 395.0,110.0 H451.0 Q455.0,110.0 455.0,114.0 V390.0 Z" fill="#eb6834"><title>dev accuracy: 1.000</title></path>
+<text x="423.0" y="102.0" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">1.000</text>
+<text x="390.0" y="412.0" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="normal">dev (30, tuned on)</text>
+<path d="M537.0,390.0 V154.4 Q537.0,150.4 541.0,150.4 H597.0 Q601.0,150.4 601.0,154.4 V390.0 Z" fill="#2a78d6"><title>blind final: 0.856</title></path>
+<text x="569.0" y="142.4" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">0.856</text>
+<path d="M603.0,390.0 V144.5 Q603.0,140.5 607.0,140.5 H663.0 Q667.0,140.5 667.0,144.5 V390.0 Z" fill="#eb6834"><title>blind accuracy: 0.891</title></path>
+<text x="635.0" y="132.5" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">0.891</text>
+<text x="602.0" y="412.0" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="normal">blind (18, held out)</text>
+<path d="M749.0,390.0 V114.0 Q749.0,110.0 753.0,110.0 H809.0 Q813.0,110.0 813.0,114.0 V390.0 Z" fill="#2a78d6"><title>selftest final: 1.000</title></path>
+<text x="781.0" y="102.0" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">1.000</text>
+<path d="M815.0,390.0 V114.0 Q815.0,110.0 819.0,110.0 H875.0 Q879.0,110.0 879.0,114.0 V390.0 Z" fill="#eb6834"><title>selftest accuracy: 1.000</title></path>
+<text x="847.0" y="102.0" font-size="12" fill="#0b0b0b" text-anchor="middle" font-weight="600">1.000</text>
+<text x="814.0" y="412.0" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="normal">selftest (5, synthetic)</text>
+<text x="72.0" y="446.0" font-size="12" fill="#52514e" text-anchor="start" font-weight="normal">dev was tuned against after its first run (0.797): treat it as regression, not a held-out score. blind first ran at 0.800.</text>
+</svg>
