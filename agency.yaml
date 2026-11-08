@@ -85,9 +85,9 @@ quality:
   block_on_console_log: false
   review_confidence_threshold: 80      # findings below this are filtered (unified — was 50/80)
   format_command: ""                   # e.g. "pnpm exec oxfmt --check ."
-  lint_command: ""                     # e.g. "pnpm exec oxlint"
+  lint_command: "python3 -m compileall -q submission tests scripts demo"   # syntax check; no linter installed
   typecheck_command: ""                # e.g. "pnpm exec tsc --noEmit"
-  test_command: ""                     # e.g. "pnpm exec jest"
+  test_command: "python3 -m unittest discover -s tests"   # stdlib-only suite (HACA-5); needs no snapshot data
   tests_required: true                 # empty test_command STOPS the gate rather than
                                        # skipping it. false waives tests deliberately —
                                        # and the waiver is reported on every gate.

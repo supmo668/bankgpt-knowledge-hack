@@ -1,0 +1,2 @@
+# bank-gpt submission v1: standard library only (checked on a clean Python 3.11.10 and on 3.13).
+# No third-party packages and no API keys are needed. See NOTES.md.

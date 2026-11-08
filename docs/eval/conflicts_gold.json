@@ -1,0 +1,14 @@
+[
+  {"id": "cg-01", "topic_keywords": ["60-month", "auto"], "values": ["5.34%", "5.39%"], "correct_value": "5.39%", "why": "2023-26 tier on /calculators/vehicle-affordability and /switch-and-earn (eff 1/1/2026) vs 2024-27 tier on /rates (eff 08/31/2026)"},
+  {"id": "cg-02", "topic_keywords": ["30-year", "832,750"], "values": ["6.037%", "7.29%"], "correct_value": "7.29%", "why": "/homebuying-guidance table (eff 04/22/2026) vs /rates (eff 09/25/2026), snapshot 05"},
+  {"id": "cg-03", "topic_keywords": ["30-year", "300,000"], "values": ["6.061%", "7.32%"], "correct_value": "7.32%", "why": "same stale page, $300k tier"},
+  {"id": "cg-04", "topic_keywords": ["30-year", "200,000"], "values": ["5.954%", "7.34%"], "correct_value": "7.34%", "why": "same stale page, $200k tier"},
+  {"id": "cg-05", "topic_keywords": ["refinance", "15-year"], "values": ["5.623%", "6.88%"], "correct_value": "6.88%", "why": "/mortgage-refi (eff 04/22/2026) vs /rates (eff 09/25/2026)"},
+  {"id": "cg-06", "topic_keywords": ["10 month", "jumbo"], "values": ["3.90%", "4.00%"], "correct_value": "4.00%", "why": "rate sheet changed between snapshot 04 and 05"},
+  {"id": "cg-07", "topic_keywords": ["17 month", "certificate"], "values": ["3.85%", "4.10%"], "correct_value": "4.10%", "why": "rate sheet changed 03 -> 04 -> 05"},
+  {"id": "cg-08", "topic_keywords": ["12 month", "certificate"], "values": ["2.90%", "3.40%"], "correct_value": "3.40%", "why": "rate sheet changed between snapshot 02 and 03"},
+  {"id": "cg-09", "topic_keywords": ["1st rate checking"], "values": ["3.00%", "2.50%"], "correct_value": "2.50%", "why": "checking offer landing pages (eff 07/01/2025) vs /rates (eff 06/02/2026)"},
+  {"id": "cg-10", "topic_keywords": ["2017-20", "60-month"], "values": ["6.14%", "6.34%"], "correct_value": "6.34%", "why": "rate sheet changed between snapshot 04 and 05"},
+  {"id": "cg-11", "topic_keywords": ["branches", "branch"], "values": ["24 branch", "23 branch", "22 branch"], "correct_value": "22 branch", "why": "press-release boilerplate; 22 after the Hy-Vee closure (latest releases)"},
+  {"id": "cg-12", "topic_keywords": ["forbes"], "values": ["fourth time", "fifth time"], "correct_value": "fifth time", "why": "2023 vs 2024 Forbes releases both online"}
+]
