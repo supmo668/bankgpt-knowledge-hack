@@ -9,7 +9,7 @@ from typing import Optional
 
 from .chunker import Chunk
 from .store import Store
-from .text import amount_range, expand_query, money_values, stem, tokens, year_range
+from .text import amount_range, expand_query, money_values, numwords_to_digits, stem, tokens, year_range
 
 REFUSAL_TEXT = "I don't know: that isn't listed on the website. Please contact us and a team member can help."
 
@@ -22,6 +22,7 @@ LIST_INTENT_RE = re.compile(r"\b(what|which) (\w+ ){0,3}(do|does) (you|dupaco) (
                             r"\b(\w+ )?(rates|aprs|apys)\b.*\b(right now|today)\b|\bprovide (\w+ ){0,3}rates\b", re.I)
 HAS_RATE_RE = re.compile(r"\d+(?:\.\d+)?\s?%\s*(?:\(?apr\)?|\(?apy\)?|annual percentage|fixed rate|variable rate|dividend)|"
                          r"(?:rates?|apr|apy|yield)\s*(?:of|is|at|:|=|as low as|from)?\s*\d+(?:\.\d+)?\s?%", re.I)
+MIN_COVERAGE = 0.25
 CTA_RE = re.compile(r"^(for more information|to learn more|learn more|click|visit|download|get started|apply|see details|"
                     r"open my|call to|keep reading|read more)\b", re.I)
 SUBJECT_RE = re.compile(r"\b([a-z][a-z$/-]+)\s+(loans?|mortgages?|accounts?|cards?|certificates?|cds?|lines? of credit|savings|checking|ira)\b", re.I)
@@ -172,7 +173,7 @@ class Answerer:
     # ------------------------------------------------------------------ ranking
     def rank(self, question: str, si: int, it: Intent, limit: int = 80) -> list[tuple[float, int]]:
         s = self.s
-        qx = expand_query(question)
+        qx = expand_query(_strip_dates(question))
         qtoks = tokens(qx)
         qset = set(qtoks)
         raw = s.bm25(qtoks, si)
@@ -247,6 +248,10 @@ class Answerer:
                 f *= 0.4   # teaser card of another article
             if c.kind == "row":
                 f *= 1.1
+            if not s.present(c.url, si):
+                f *= 0.6    # page missing from this crawl: carried forward from an older one
+            if s.expired(cid, si):
+                f *= 0.15   # the offer says it has ended
             out.append((sc * f, cid))
         out.sort(key=lambda x: (-x[0], x[1]))
         # collapse the same text repeated across pages (boilerplate, shared rate tables): keep the best,
@@ -267,6 +272,7 @@ class Answerer:
     # ------------------------------------------------------------------ answer
     def answer(self, question: str, si: int) -> Result:
         s = self.s
+        question = numwords_to_digits(question)
         it = intent_of(question)
         ranked = self.rank(question, si, it)
         if not ranked:
@@ -297,9 +303,11 @@ class Answerer:
                 continue
             if it.hours and not TIME_RE.search(c.text):
                 continue
+            if (it.rate or it.fee) and s.expired(cid, si):
+                continue
             best = (sc, cid)
             break
-        if best is None or best[0] < 3.0:
+        if best is None or self.coverage(question, best[1]) < MIN_COVERAGE:
             return Result(REFUSAL_TEXT, confident=False)
         if it.count_noun:
             best = self._latest_statement(best, ranked, ents, it.count_noun)
@@ -333,6 +341,16 @@ class Answerer:
             return best
         _, sc, cid = max(pool, key=lambda t: (t[0], t[1]))
         return (sc, cid)
+
+    def coverage(self, question: str, cid: int) -> float:
+        """Share of the question's information (idf mass) that the passage and its context mention."""
+        s = self.s
+        qt = set(tokens(_strip_dates(question)))
+        if not qt:
+            return 0.0
+        have = s.chunk_tf[cid]
+        tot = sum(s.idf(t) for t in qt)
+        return sum(s.idf(t) for t in qt if t in have) / tot if tot else 0.0
 
     def _tier_fits(self, question: str, c: Chunk) -> bool:
         """A rate answer must match the term / amount the member named; otherwise the site doesn't say."""
@@ -457,7 +475,7 @@ class Answerer:
         first = s.chunks[rids[0]]
         cap = first.ctx.split(" > ")[-1] if first.ctx else ""
         parts = [_short(s.chunks[r].text) for r in rids]
-        lead = f"{cap}: " if cap and cap.lower() not in parts[0].lower() else ""
+        lead = f"{cap}: " if cap and not re.search(r"\d", cap) and cap.lower() not in parts[0].lower() else ""
         return lead + "; ".join(parts) + "."
 
     def _best_sentences(self, question: str, txt: str, k: int = 2) -> str:

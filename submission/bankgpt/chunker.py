@@ -7,13 +7,14 @@ from datetime import date
 from typing import Optional
 from urllib.parse import urlparse
 
-from .text import clean_inline, parse_date_line, year_range
+from .text import clean_inline, offer_end, parse_date_line, year_range
 
 EFFECTIVE_RE = re.compile(r"effective (?:as of )?(\d{1,2}/\d{1,2}/\d{2,4})", re.I)
 BOLD_LABEL_RE = re.compile(r"^\*\*([^*]{1,40})\*\*:?$")
 GENERIC_HEADER_RE = re.compile(r"(?i)^(term|terms?|account( type)?|certificate|program|card type|loan (program|amount|type)|"
                                r"ira type|privileges|product|type|balance( tier)?|rate|apr|apy|tier|amount|col\d*|"
                                r"model year|vehicle|description|fee|service|item|)$")
+KV_RE = re.compile(r"^([^:]{3,80}?):\s*(\$?\s?\d[\d,]*(?:\.\d+)?\s?%?(?:\s*(?:APY|APR))?)\s*(?:\([^)]*\))?\.?$", re.I)
 SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z“\"(])")
 NOISE_LINE_RE = re.compile(r"^(\* \* \*|---+|Loading locations\.\.\.|Go|Cancel|Continue.*Cancel|\d+ min read)$", re.I)
 
@@ -29,6 +30,7 @@ class Chunk:
     effective: Optional[str] = None  # "Rates are effective as of ..." attached to a table
     links: list = field(default_factory=list)
     key_alias: dict = field(default_factory=dict)  # qualifier cell -> canonical form (model-year tiers)
+    ends: Optional[str] = None       # ISO date an offer says it ended / ends ("offer ended 2025-09-30")
 
 
 @dataclass
@@ -148,13 +150,21 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             group = [m.group(1).strip(), [], (head_ctx() + " | " + last_para_text[-160:]).strip(" |")]
             return
         ctx = " > ".join(x for x in (head_ctx(), section, caption) if x and x != txt)
-        chunks.append(Chunk(url, txt, ctx, "para", links=links))
+        ends = offer_end(txt)
+        kv = KV_RE.match(txt)
+        if kv and len(txt) <= 160:
+            # "6-month certificate APY: 3.50%" / "Routing Number: 273974581" is a one-row fact table
+            chunks.append(Chunk(url, txt, ctx, "row", table=f"{url}#kv{len(chunks)}",
+                                cells={"Item": kv.group(1).strip(), "Value": kv.group(2).strip()}, ends=ends, links=links))
+            last_para_text = txt
+            return
+        chunks.append(Chunk(url, txt, ctx, "para", links=links, ends=ends))
         if len(txt) > 350:
             # long paragraphs are also indexed sentence by sentence (precise hits, short answers)
             sents = SENT_SPLIT_RE.split(txt)
             for snt in sents:
                 if len(snt) >= 25:
-                    chunks.append(Chunk(url, snt, ctx, "sent"))
+                    chunks.append(Chunk(url, snt, ctx, "sent", ends=offer_end(snt)))
         last_para_text = txt
 
     i = 0
@@ -194,7 +204,8 @@ def chunk_page(url: str, title: str, markdown: str) -> list[Chunk]:
             i += 1
             continue
         cl = clean_inline(s)[0]
-        is_short = 0 < len(cl) <= 60 and not cl.endswith((".", ":", "?", "!")) and not s.startswith(("-", "*", "[", "!"))
+        is_short = 0 < len(cl) <= 60 and not cl.endswith((".", ":", "?", "!")) and not s.startswith(("-", "*", "[", "!")) \
+            and not re.search(r"\d\s?%|\$\s?\d", cl) and not KV_RE.match(cl)
         m = re.match(r"^(#{1,6})\s+(.*)$", s)
         if m:
             flush_para()

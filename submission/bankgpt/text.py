@@ -33,6 +33,14 @@ NUMWORDS = {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six
             "eight": "8", "nine": "9", "ten": "10", "eleven": "11", "twelve": "12", "fifteen": "15",
             "eighteen": "18", "twenty": "20", "thirty": "30", "forty": "40", "sixty": "60"}
 
+_NUMWORD_RE = re.compile(r"\b(" + "|".join(NUMWORDS) + r")\b(?=[\s-]+(?:month|year|day|week)s?\b)", re.I)
+
+
+def numwords_to_digits(q: str) -> str:
+    """'six month certificate' -> '6 month certificate' (only before a time unit)."""
+    return _NUMWORD_RE.sub(lambda m: NUMWORDS[m.group(1).lower()], q)
+
+
 STOP = set("""a an the of and or to in on for is are was were be been do does did can could would should
 what whats which who whom whose when where why how i im me my we our you your it its this that these those there
 at by with from as about into than then so if any all some please tell give get me know want like much many
@@ -177,3 +185,35 @@ def as_of_from_text(q: str):
         return date(yr, mon, d).isoformat()
     except ValueError:
         return None
+
+
+_MON = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+END_RE = re.compile(
+    r"\b(?:ended|expired|expires|expiring|ends|ending|valid (?:through|thru|until)|available (?:through|until)|"
+    r"good (?:through|until)|offer (?:through|until))\s*(?:on\s*)?"
+    rf"((?:19|20)\d\d-\d\d-\d\d|\d{{1,2}}/\d{{1,2}}/(?:19|20)?\d\d|{_MON}\.?\s+\d{{1,2}},?\s+(?:19|20)\d\d)", re.I)
+
+
+def _to_iso(d: str):
+    d = d.strip()
+    try:
+        if re.match(r"\d{4}-\d\d-\d\d$", d):
+            return date.fromisoformat(d).isoformat()
+        m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{2,4})$", d)
+        if m:
+            y = int(m.group(3))
+            return date(y + 2000 if y < 100 else y, int(m.group(1)), int(m.group(2))).isoformat()
+        m = re.match(r"([a-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})$", d, re.I)
+        if m:
+            key = m.group(1).lower()
+            mon = MONTHS.get(key) or MONTHS.get(key[:3])
+            return date(int(m.group(3)), mon, int(m.group(2))).isoformat() if mon else None
+    except ValueError:
+        return None
+    return None
+
+
+def offer_end(text: str):
+    """ISO date an offer/promotion says it ended or ends, if the text states one."""
+    m = END_RE.search(text)
+    return _to_iso(m.group(1)) if m else None

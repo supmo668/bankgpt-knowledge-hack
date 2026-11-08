@@ -78,7 +78,10 @@ def row_values(c: Chunk) -> tuple:
     """Value cells as (canonical column, numbers), so 6.000% == 6.00% and APR == Annual Percentage Rate."""
     vals = []
     for k, v in c.cells.items():
-        if "%" not in v or re.search(r"(?i)payment|min|points", k):
+        if re.search(r"(?i)payment|min|points|tier|balance|amount|limit|example", k):
+            continue
+        is_fee = "$" in v and (k in ("Value",) or re.search(r"(?i)fee|cost|price|charge", k)) and not re.search(r"[–+-]|or less", v)
+        if "%" not in v and not is_fee:
             continue
         nums = tuple(round(float(x.replace(",", "")), 4) for x in NUM_RE.findall(v))
         if nums:
@@ -99,7 +102,9 @@ class Store:
     def __init__(self) -> None:
         self.snapshots: list[tuple[str, str]] = []          # (snapshot_id, taken_on), ingest order
         self.chunks: list[Chunk] = []
-        self.chunk_mask: list[int] = []
+        self.chunk_mask: list[int] = []                      # snapshots whose crawl contained the chunk
+        self.chunk_view: list[int] = []                      # views (as_of = snapshot i) where it is visible
+        self.url_version: dict[str, int] = {}                # url -> newest snapshot that crawled it
         self.chunk_len: list[int] = []
         self.chunk_tf: list[dict] = []
         self.key2id: dict[tuple, int] = {}
@@ -132,6 +137,7 @@ class Store:
                     self.key2id[key] = cid
                     self.chunks.append(c)
                     self.chunk_mask.append(0)
+                    self.chunk_view.append(0)
                     toks = tokens(f"{info.title} {c.ctx} {c.text}")
                     tf: dict[str, int] = defaultdict(int)
                     for t in toks:
@@ -144,6 +150,12 @@ class Store:
                         self.table_rows[c.table].append(cid)
                     self.url_chunks[c.url].append(cid)
                 self.chunk_mask[cid] |= bit
+            self.url_version[p.url] = si
+        # the view at snapshot i = the newest crawled version of every page seen so far (a page missing from
+        # one crawl is not deleted; it is carried forward, with a penalty at ranking time)
+        for cid, c in enumerate(self.chunks):
+            if self.chunk_mask[cid] >> self.url_version[c.url] & 1:
+                self.chunk_view[cid] |= bit
         self._resolve_facts(si)
         self._finalize()
         return si
@@ -152,13 +164,23 @@ class Store:
         """How strongly a row claims to be current: effective date, then authority, then recency."""
         c = self.chunks[cid]
         info = self.pages[c.url]
-        return (_eff_date(c.effective), info.authority, info.pub_date or date.max, -cid)
+        present = bool(self.page_snaps[c.url] >> si & 1)
+        live = not (c.ends and c.ends < self.snapshots[si][1])
+        return (live, _eff_date(c.effective), present, info.authority, info.pub_date or date.max, -cid)
+
+    def present(self, url: str, si: int) -> bool:
+        return bool(self.page_snaps.get(url, 0) >> si & 1)
+
+    def expired(self, cid: int, si: int) -> bool:
+        """An offer whose stated end date is before the snapshot date."""
+        e = self.chunks[cid].ends
+        return bool(e) and e < self.snapshots[si][1]
 
     def _resolve_facts(self, si: int) -> None:
         bit = 1 << si
         groups: dict[str, list[int]] = defaultdict(list)
         for cid, c in enumerate(self.chunks):
-            if c.kind == "row" and self.chunk_mask[cid] & bit:
+            if c.kind == "row" and self.chunk_view[cid] & bit:
                 k = row_key(c)
                 if k and row_values(c):
                     groups[k].append(cid)
@@ -202,7 +224,7 @@ class Store:
                 continue
             idf = self._idf[t]
             for cid in ps:
-                if not self.chunk_mask[cid] & bit:
+                if not self.chunk_view[cid] & bit:
                     continue
                 f = self.chunk_tf[cid][t]
                 dl = self.chunk_len[cid]
@@ -211,12 +233,12 @@ class Store:
 
     def page_chunks(self, url: str, si: int) -> list[int]:
         bit = 1 << si
-        return [cid for cid in self.url_chunks.get(url, []) if self.chunk_mask[cid] & bit]
+        return [cid for cid in self.url_chunks.get(url, []) if self.chunk_view[cid] & bit]
 
     def rows_of(self, table: str, si: int) -> list[int]:
         bit = 1 << si
         sh = self.shadowed.get(si, set())
-        return [cid for cid in self.table_rows.get(table, []) if self.chunk_mask[cid] & bit and cid not in sh]
+        return [cid for cid in self.table_rows.get(table, []) if self.chunk_view[cid] & bit and cid not in sh]
 
     def recency(self, info: PageInfo, ref: date) -> float:
         """1.0 for undated live pages; dated pages decay over ~6 years before the snapshot date."""
