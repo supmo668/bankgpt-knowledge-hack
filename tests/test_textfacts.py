@@ -161,5 +161,23 @@ class AwardStatementsAndReferences(unittest.TestCase):
         self.assertIn("15,000", a.text)
 
 
+class ValueCheckQuestions(unittest.TestCase):
+    """'Do any savings tiers pay 0.35% APY?': the stated value is checked against the product, not used to find
+    whichever product happens to carry it."""
+
+    def test_value_is_checked_not_looked_up(self):
+        t = ("# Rates\n\nShare Savings\n\n| Account | Balance Tier | APY |\n| --- | --- | --- |\n"
+             "| Share Savings | $25,000+ | 0.20% |\n| Share Savings | $0 - $24,999.99 | 0.10% |\n\n"
+             "Money Market\n\n| Account | Balance Tier | APY |\n| --- | --- | --- |\n"
+             "| Investor's Choice Money Market | $25,000+ | 0.35% |\n")
+        ks = solution.build()
+        ks.ingest(snap("01", "2026-09-28", {"/rates": t}))
+        a = ks.answer("Do any savings tiers pay 0.35% APY?")
+        self.assertTrue(a.text.startswith("No:"), a.text)
+        self.assertIn("0.20%", a.text)
+        a = ks.answer("Do any savings tiers pay 0.20% APY?")
+        self.assertTrue(a.text.startswith("Yes:"), a.text)
+
+
 if __name__ == "__main__":
     unittest.main()
