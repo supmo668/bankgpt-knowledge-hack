@@ -52,6 +52,9 @@ ORDINAL_TIME_RE = re.compile(r"(?i)\b(?:first|second|third|fourth|fifth|sixth|se
 # a sentence that refers back to the entity of the sentence before it ("This initiative provides up to $15,000")
 ANAPHOR_RE = re.compile(r"^(?:This|The|These|It|Its)\b(?:\s+(?:new\s+)?(?:initiative|program|programme|offer|grant|"
                         r"loan|account|card|benefit|service|fund|product|partnership))?\b")
+# a yes/no check of a stated value ("Do any savings tiers pay 0.35% APY?", "Is there a certificate at 5%?")
+VERIFY_RE = re.compile(r"(?i)^\s*(?:do|does|is|are) (?:any|there|dupaco|you)\b.*\b(?:pay|earn|offer|yield|get|at)\b[^?]*"
+                       r"\d(?:\.\d+)?\s?%")
 HISTORY_RE = re.compile(r"\b(expired|ended|past|previous|former|used to|old)\b", re.I)
 PROCEDURE_RE = re.compile(r"\bhow (do|can|would) i\b|\bwhere (do|can) i\b|\bonline\b", re.I)
 COUNT_INTENT_RE = re.compile(r"\bhow many\b", re.I)
@@ -201,6 +204,9 @@ class Answerer:
     def rank(self, question: str, si: int, it: Intent, limit: int = 80) -> list[tuple[float, int]]:
         s = self.s
         qx = expand_query(_strip_dates(question))
+        if VERIFY_RE.search(question):
+            # "Do any savings tiers pay 0.35% APY?": the value is what to check, not what to look up
+            qx = re.sub(r"\d+(?:\.\d+)?\s?%", " ", qx)
         qtoks = tokens(qx)
         qset = set(qtoks)
         raw = s.bm25(qtoks, si)
@@ -342,6 +348,11 @@ class Answerer:
         sc, cid = best
         text, used = self._compose(question, it, cid, sc, ranked, si)
         text = self._titled(text, cid)
+        vm = VERIFY_RE.search(question) and re.search(r"(\d+(?:\.\d+)?)\s?%", question)
+        if vm and s.chunks[cid].kind == "row":
+            v = float(vm.group(1))
+            shown = {float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s?%", text)}
+            text = (f"Yes: {v:g}% is listed. " if v in shown else f"No: none of these pays {v:g}%. ") + text
         if PROCEDURE_RE.search(question):
             link = self._action_link(question, cid, si)
             if link and link not in text:
