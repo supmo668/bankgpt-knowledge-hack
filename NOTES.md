@@ -52,9 +52,12 @@ recognitions). The resolution is the value the answer path gives today.
    counted noun. Proper names in the question (Galena, Hy-Vee, Mullan Avenue) must appear in the passage.
 5. Compose one value per fact: the matching row(s) of one table (all tiers only when no tier was named), or the
    best one or two sentences. Superseded *table and `label: value`* facts are shadowed and never quoted.
-   Free-text paragraphs are not fact-checked against the tables; they are kept out of rate answers by the gates
-   in step 4 (rate sheet / product / landing / home pages only, real rate value, named product). That is a
-   known limit. The reason a value won goes in `conflict_note`.
+   Paragraph rates are kept out of rate answers by the gates in step 4 (rate sheet / product / landing / home
+   pages only, real rate value, named product); v2 checks them against the tables in `conflicts()` (see
+   "Free-text facts"). Award questions take the newest dated statement about the recognition, a sentence that
+   refers back to the passage it follows ("This initiative provides …") is kept with it, and a yes/no question
+   about a stated value ("Do any savings tiers pay 0.35% APY?") checks the value instead of retrieving by it.
+   The reason a value won goes in `conflict_note`.
 6. Refuse honestly (`confident=False`, no digits in the text) when nothing passes the gates, or the best passage
    covers under 25% of the question's information (IDF mass).
 
@@ -121,6 +124,34 @@ A crawl only says what the site showed on the day it was taken. Pages say more: 
 Tested on synthetic pages in `tests/test_intervals.py` (effective date inside a gap, backdated date vs
 observation, undated change, offer ending mid-gap, shadowed copies stored). `docs/eval/dev_eval.jsonl` carries
 `dev-gap-*` items whose `as_of` falls between snapshots, built from snapshot diffs.
+
+## Free-text facts (v2)
+
+`bankgpt/textfacts.py` reads rate statements out of paragraphs and checks them against the tables.
+
+- **Claims.** A claim is one value a sentence states, with its qualifiers: the column (APY, APR, dividend rate),
+  intro or standard, the term in months, the balance or loan amount ("borrow $30,000", "$25,000.00-99,999.99 at
+  4.00%"), and a stated "as of" date. Ranges ("12.50% APR to 19.50% APR") are one claim. Bounds and hypotheticals
+  are not claims: floors, caps, "never less than", prime-plus margins, "if you do not qualify", averages.
+- **Entity resolution.** A claim maps to the same fact keys the tables use: the key must have the claim's column,
+  the stated term, and a tier containing the stated amount; it must share a distinctive product word with the
+  sentence ("achieve", "atv", "equity"; not "loan" or "savings"), or contain every word of an all-generic name
+  ("personal loan"); a standard claim never maps to an intro key. The sentence's own words decide first, and its
+  heading only when the sentence names no product, because one disclosure paragraph is often repeated under every
+  product tab of a page. Personal pages never map to business products. Ties are kept: a claim that names no tier
+  maps to every tier of the product, and agrees when any of them carries its value.
+- **Conflicts.** In each crawl, a claim that no tier of its product carries is a paragraph-vs-table conflict
+  (topic "… (paragraph vs table)"), one entry per statement and fact, while the fact is still on the site. It is
+  resolved by the same rule order as table rows (offer live, effective date, present in crawl, authority,
+  publication date, first seen), where the sentence's stated "as of" date counts as its effective date. A
+  paragraph the newest crawl no longer shows has lost to the table's current value.
+- **Counts and awards** stay dated text facts: the newest publication wins ("22 branch office locations",
+  "the fifth time Forbes recognized Dupaco").
+- **Not covered yet:** fees and opening hours stated in paragraphs are not checked against the fee and hours
+  tables.
+
+Tested on synthetic pages in `tests/test_textfacts.py`. `docs/eval/conflicts_gold.json` carries 7
+`paragraph_vs_table` gold cases (cg-13 … cg-19) built from snapshot diffs.
 
 ## Embedding it in another Python app (R7)
 
