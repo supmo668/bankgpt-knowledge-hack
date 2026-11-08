@@ -122,10 +122,13 @@ class TextHelpers(unittest.TestCase):
 
 class AuthorityRanking(unittest.TestCase):
     def test_order(self):
-        order = ["/rates", "/personal/loans/auto-loans", "/newsroom/x", "/learn/blog/y",
-                 "/calculators/vehicle-affordability", "/offer-expired"]
+        order = ["/rates", "/personal/loans/auto-loans", "/", "/checking-offer-lp", "/newsroom/x",
+                 "/learn/blog/y", "/business/resources/guide", "/calculators/vehicle-affordability",
+                 "/newsroom/tag/news", "/offer-expired", "/privacy-policy?campaignId=1"]
         auth = [page_kind(CU + p)[1] for p in order]
         self.assertEqual(auth, sorted(auth, reverse=True), dict(zip(order, auth)))
+        self.assertEqual(len(set(auth)), len(auth), dict(zip(order, auth)))
+        self.assertEqual(page_kind(CU + "/hubfs/fee-schedule.pdf")[1], page_kind(CU + "/newsroom/x")[1])
 
 
 class CurrencyRules(unittest.TestCase):

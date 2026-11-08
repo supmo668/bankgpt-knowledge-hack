@@ -49,8 +49,10 @@ recognitions). The resolution is the value the answer path gives today.
    term/amount/qualifier asked, and an offer that hasn't ended. Hours need a time, counts a number next to the
    counted noun. Proper names in the question (Galena, Hy-Vee, Mullan Avenue) must appear in the passage.
 5. Compose one value per fact: the matching row(s) of one table (all tiers only when no tier was named), or the
-   best one or two sentences. Superseded values never appear in `text`. The reason a value won goes in
-   `conflict_note`.
+   best one or two sentences. Superseded *table and `label: value`* facts are shadowed and never quoted.
+   Free-text paragraphs are not fact-checked against the tables; they are kept out of rate answers by the gates
+   in step 4 (rate sheet / product / landing / home pages only, real rate value, named product). That is a
+   known limit. The reason a value won goes in `conflict_note`.
 6. Refuse honestly (`confident=False`, no digits in the text) when nothing passes the gates, or the best passage
    covers under 25% of the question's information (IDF mass).
 
@@ -62,11 +64,18 @@ Unit-tested in `tests/test_currency_rules.py` (decision D3).
 
 1. **Snapshot view.** "Current" means the newest snapshot. A page missing from a later crawl is carried forward
    from its last crawl (penalised ×0.6 when ranking), because a crawl gap is not a deletion.
-2. **Newest effective date wins.** Rate tables carry "Rates are effective as of MM/DD/YYYY". For the same fact
-   key, the row with the newest effective date wins. Undated copies lose to dated ones.
-3. **Then source authority.** Rate sheet (`/rates`, `/business-rates`) 1.0 > product pages 0.9 > landing pages
-   0.7 > newsroom 0.6 = PDF documents 0.6 > blog 0.45 > resources 0.4 > calculators 0.25 > tag/author indexes 0.2
-   > expired-offer pages 0.1. Calculators and blogs never answer a rate question.
+2. **Newest effective date wins.** Rate tables carry "Rates are effective as of MM/DD/YYYY", and the date is
+   recorded per crawl. For the same fact key, the row with the newest effective date wins. Undated copies lose to
+   dated ones. This deliberately puts the date ahead of authority: a product page updated after the rate sheet
+   is newer information.
+3. **Then source authority.** Rate sheet (`/rates`, `/business-rates`) 1.0 > product pages 0.9 > home page 0.85 >
+   landing pages 0.7 > newsroom 0.6 = PDF documents 0.6 > blog 0.45 > resources 0.4 > calculators 0.25 > tag/author
+   indexes 0.2 > expired-offer pages 0.1 > modal/query-string duplicates 0.05. Calculators and blogs never answer a
+   rate question (the rate gate admits only rate sheet, product, landing and home pages).
+
+   The exact tie-break order for two rows of one fact (`Store.claim`): offer still live → newest effective date →
+   page present in this crawl (not carried forward) → authority → most recent publication date → the value that
+   appeared in the latest crawl.
 4. **Expired offers never win.** Text such as "offer ended 2025-09-30" or "valid through December 31, 2025" before
    the snapshot date marks the chunk expired: excluded from rate/fee answers, last in conflict resolution.
 5. **Dated statements: the newest publication wins.** Counts and "Nth time" claims in press releases are taken
