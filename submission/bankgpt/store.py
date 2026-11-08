@@ -181,6 +181,7 @@ class View:
     nxt: Optional[int] = None  # interval views: the later crawl whose dated tables were swapped in
     swapped: tuple = ()        # table keys taken from the later crawl
     why: str = ""              # what opened the view ("effective 09/25/2026 on /rates")
+    trailing: bool = False     # a view after the newest crawl, opened by an offer's stated end date
 
 
 @dataclass
@@ -199,6 +200,13 @@ class FactVersion:
 
 def _iso(d: date) -> str:
     return d.isoformat()
+
+
+def _parse_iso(s: Optional[str]) -> Optional[date]:
+    try:
+        return date.fromisoformat(s[:10]) if s else None
+    except ValueError:
+        return None
 
 
 class Store:
@@ -270,6 +278,7 @@ class Store:
         self._resolve_facts(vid)
         if prev_view is not None:
             self._interval_views(prev_view, vid)
+        self._trailing_views(vid)
         self._timelines = None
         self._finalize()
         return si
@@ -326,9 +335,8 @@ class Store:
         abit = 1 << va
         for cid, c in enumerate(self.chunks):
             if c.ends and self.chunk_view[cid] & abit:
-                try:
-                    end = date.fromisoformat(c.ends)
-                except ValueError:
+                end = _parse_iso(c.ends)
+                if end is None:
                     continue
                 nxt = end + timedelta(days=1)
                 if da < nxt < db:
@@ -347,6 +355,32 @@ class Store:
                 if (self.chunk_view[cid] & abit and cid not in drop) or cid in add:
                     self.chunk_view[cid] |= bit
             self._resolve_facts(vid)
+
+    def _trailing_views(self, vb: int) -> None:
+        """Views after the newest crawl: one the day after each stated end date of an offer that crawl still
+        shows, so an `as_of` past the end no longer quotes the offer. Only the newest crawl's are used."""
+        b = self.views[vb]
+        bbit = 1 << vb
+        ends = set()
+        for cid, c in enumerate(self.chunks):
+            if c.ends and self.chunk_view[cid] & bbit:
+                end = _parse_iso(c.ends)
+                if end and _iso(end) >= b.date:
+                    ends.add((end + timedelta(days=1), c.url))
+        for d in sorted({d for d, _ in ends}):
+            why = "; ".join(dict.fromkeys(f"offer on {_short_path(u)} ended {(d - timedelta(days=1)).isoformat()}"
+                                          for e, u in sorted(ends) if e == d))
+            vid = self._new_view(View(date=_iso(d), snap=b.snap, why=why, trailing=True))
+            bit = 1 << vid
+            for cid in range(len(self.chunks)):
+                if self.chunk_view[cid] & bbit:
+                    self.chunk_view[cid] |= bit
+            self._resolve_facts(vid)
+
+    def live_views(self) -> list[int]:
+        """Every view still in force: crawls, interval views, and the newest crawl's trailing views."""
+        latest = self.views[self.snapshot_for(None)].snap if self.snapshots else -1
+        return [v for v, vw in enumerate(self.views) if not vw.trailing or vw.snap == latest]
 
     def claim(self, cid: int, si: int) -> tuple:
         """How strongly a row claims to be current in view `si`: offer live, effective date, page present,
@@ -438,9 +472,10 @@ class Store:
             return base
         d = as_of[:10]
         best = base
+        latest = base == self.snapshot_for(None)
         for vid, v in enumerate(self.views):
-            if v.nxt is not None and v.snap == self.views[base].snap and v.date <= d \
-                    and v.date >= self.views[best].date:
+            if (v.nxt is not None or (v.trailing and latest)) and v.snap == self.views[base].snap \
+                    and v.date <= d and v.date >= self.views[best].date:
                 best = vid
         return best
 
@@ -466,36 +501,34 @@ class Store:
         return out
 
     def _build_timelines(self) -> dict[str, list[FactVersion]]:
-        order = sorted(range(len(self.views)), key=lambda v: (self.views[v].date, v))
+        order = sorted(self.live_views(), key=lambda v: (self.views[v].date, v))
+        pos = {v: i for i, v in enumerate(order)}
+        crawl_date = self.view_date(self.snapshot_for(None)) if order else ""   # newest observation
         keys = set()
         for v in order:
             keys.update(self.winners.get(v, {}))
         out: dict[str, list[FactVersion]] = {}
         for k in keys:
-            runs: list[list] = []          # [value, first view, last view, winning cid]
-            gone_after: dict[int, int] = {}
+            # runs over every view in date order: [value, first view, last view, winning cid]; value None = the
+            # key is not on the site in that view (also before it first appears, so a backdated claim can't
+            # reach over a crawl that did not show it)
+            runs: list[list] = []
             for v in order:
                 win = self.winners.get(v, {}).get(k)
-                if win is None:
-                    if runs and runs[-1][0] is not None:
-                        runs.append([None, v, v, None])
-                    continue
-                val = row_values(self.chunks[win])
+                val = row_values(self.chunks[win]) if win is not None else None
                 if runs and runs[-1][0] == val:
                     runs[-1][2] = v
                 else:
                     runs.append([val, v, v, win])
             versions: list[FactVersion] = []
-            prev_last = None
             for i, (val, first, last, win) in enumerate(runs):
                 if val is None:
-                    prev_last = last
                     continue
                 c = self.chunks[win]
                 start = self.view_date(first)
                 eff = _eff_date(c.effective)
-                if eff != date.min and _iso(eff) < start and (prev_last is None or _iso(eff) > self.view_date(prev_last)):
-                    start = _iso(eff)   # stated effective date, when no earlier crawl contradicts it
+                if i == 0 and eff != date.min and _iso(eff) < start:
+                    start = _iso(eff)   # stated effective date, when no earlier view contradicts it
                 nxt = runs[i + 1] if i + 1 < len(runs) else None
                 end, reason = None, ""
                 if nxt is not None:
@@ -506,24 +539,38 @@ class Store:
                         nc = self.chunks[nxt[3]]
                         reason = (f"replaced by {_fmt_vals(nxt[0])} on {_short_path(nc.url)}"
                                   + (f" (effective {nc.effective})" if nc.effective else ""))
-                if c.ends and (end is None or c.ends < end):
-                    end, reason = _iso(date.fromisoformat(c.ends) + timedelta(days=1)), f"offer ended {c.ends}"
+                ends = _parse_iso(c.ends)
+                if ends is not None:
+                    stop = _iso(ends + timedelta(days=1))
+                    if stop <= start:
+                        continue    # the offer had already ended when this value was the only one shown
+                    if end is None or stop < end:
+                        end = stop
+                        reason = f"offer ended {c.ends}" if stop <= crawl_date else f"offer ends {c.ends} (stated end date)"
                 versions.append(FactVersion(k, val, start, end, c.url, self.view_sid(first, win), c.effective,
                                             reason))
-                prev_last = last
-            # losing copies that were visible while another version was current: stored, closed, with the reason
-            spans: dict[int, list] = {}      # cid -> [first view, last view, winner at last view]
+            # losing copies that were visible while another version was current: stored, closed, with the reason;
+            # one version per contiguous stretch of views in which the copy lost
+            spans: list[list] = []           # [cid, first view, last view, winner at last view]
+            open_span: dict[int, list] = {}
             for v in order:
                 win = self.winners.get(v, {}).get(k)
                 sh = self.shadowed.get(v, set())
                 for cid in self.fact_groups.get(v, {}).get(k, []):
-                    if cid in sh:
-                        spans.setdefault(cid, [v, v, win])[1:] = [v, win]
-            for cid, (first, last, win) in sorted(spans.items(), key=lambda kv: (self.view_date(kv[1][0]), kv[0])):
+                    if cid not in sh:
+                        continue
+                    sp = open_span.get(cid)
+                    if sp is not None and pos[sp[2]] == pos[v] - 1:
+                        sp[2:] = [v, win]
+                    else:
+                        sp = [cid, v, v, win]
+                        open_span[cid] = sp
+                        spans.append(sp)
+            for cid, first, last, win in sorted(spans, key=lambda sp: (self.view_date(sp[1]), sp[0], pos[sp[1]])):
                 lc = self.chunks[cid]
-                after = [v for v in order if self.view_date(v) > self.view_date(last)]
+                after = order[pos[last] + 1] if pos[last] + 1 < len(order) else None
                 versions.append(FactVersion(k, row_values(lc), self.view_date(first),
-                                            self.view_date(after[0]) if after else None, lc.url,
+                                            self.view_date(after) if after is not None else None, lc.url,
                                             self.view_sid(first, cid), lc.effective,
                                             f"shadowed: loses to {_short_path(self.chunks[win].url)} on "
                                             f"{self.why_wins(win, cid, last)}", shadowed=True))
