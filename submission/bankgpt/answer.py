@@ -8,7 +8,7 @@ from datetime import date
 from typing import Optional
 
 from .chunker import Chunk
-from .store import Store
+from .store import Store, row_key
 from .text import (amount_range, expand_query, money_values, numwords_to_digits, stem, term_patterns, tokens,
                    year_range)
 
@@ -201,7 +201,8 @@ class Answerer:
             info = s.pages[c.url]
             f = info.authority ** 0.8 * (0.8 + 0.4 * s.recency(info, ref))
             body = f"{c.ctx} {c.text}".lower()
-            head = (c.text.split(":")[0] if c.kind == "row" else c.text).lower()
+            # a row's qualifiers are all its non-value cells (term, tier, model year), not just the first one
+            head = (" ".join(v for v in c.cells.values() if "%" not in v) if c.kind == "row" else c.text).lower()
             # page-title / heading match: the page or section is *about* what was asked
             tt = set(tokens(info.title))
             if tt and qset:
@@ -320,7 +321,33 @@ class Answerer:
             link = self._action_link(question, cid, si)
             if link and link not in text:
                 text = f"{text} You can do it online at {link}"
-        return Result(text, sources=self._sources(used, ranked, si), confident=True, chunk_ids=used)
+        return Result(text, sources=self._sources(used, ranked, si), confident=True, chunk_ids=used,
+                      conflict_note=self._conflict_note(used, si))
+
+    def _conflict_note(self, used: list[int], si: int) -> Optional[str]:
+        """Why this value and not the others the site shows (kept out of `text` on purpose)."""
+        s = self.s
+        groups = s.fact_groups.get(si, {})
+        shadow = s.shadowed.get(si, set())
+        notes = []
+        for cid in used:
+            c = s.chunks[cid]
+            k = row_key(c)
+            if not k or k not in groups:
+                continue
+            losers = [x for x in groups[k] if x in shadow]
+            if not losers:
+                continue
+            lose_pages = sorted({s.chunks[x].url.replace("https://www.dupaco.com", "") or "/" for x in losers})[:3]
+            label = c.text.split(':')[0]
+            if any(n.startswith(label + ":") for n in notes):
+                continue
+            notes.append(f"{label}: other pages ({', '.join(lose_pages)}) show an older value; "
+                         f"used {c.url.replace('https://www.dupaco.com', '') or '/'} "
+                         f"(effective {c.effective or 'undated'}), the newest authoritative source.")
+            if len(notes) >= 2:
+                break
+        return " ".join(notes) or None
 
     def _latest_statement(self, best, ranked, ents, noun: str):
         """Counts ("how many branches") change over time: the most recently published statement wins."""
