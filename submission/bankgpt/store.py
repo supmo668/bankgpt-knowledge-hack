@@ -55,7 +55,10 @@ def row_key(c: Chunk) -> Optional[str]:
     scope = "business" if "business" in c.url.lower() else "personal"
     if c.key_alias:
         fam = FAMILY_RE.search(f"{c.ctx} {c.url}")
-        scope += f" | {fam.group(1).lower() if fam else 'other'}"
+        fam_name = fam.group(1).lower() if fam else "other"
+        fam_name = {"vehicle": "auto", "motorcycle loans only": "auto", "motorcycle loan only": "auto",
+                    "rv": "boat", "jet ski": "atv", "snowmobile": "atv"}.get(fam_name, fam_name)
+        scope += f" | {fam_name}"
     return f"{scope} | {q}"
 
 
