@@ -360,15 +360,16 @@ cto:
 #     domain: "apps/business/**"      # peer owns its domain’s worktrees only
 #     monitors: ["dispatch", "blocker"]
 #     defers_landing_to: "cto"        # blocker escalations flow UP to the cto
+# TODO(HACA-1): the repo has no code layout yet. Declare each coordinator's
+#   `domain:` glob (e.g. "apps/eng/**", "apps/business/**") once real top-level
+#   paths exist; domains must not overlap (tools/coordinator validate).
 coordinators:
   cto:                              # engineering — single trunk writer
     branch: "main"
-    domain: "apps/eng/**"
     monitors: ["dispatch", "issue", "blocker"]
     trunk_writer: true
   ceo:                              # business domain — runs /define for business
     branch: "business"              #   workstreams; never lands the trunk
-    domain: "apps/business/**"
     monitors: ["dispatch", "blocker"]
     defers_landing_to: "cto"
 
