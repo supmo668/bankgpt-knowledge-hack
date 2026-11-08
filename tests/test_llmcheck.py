@@ -82,6 +82,18 @@ class LlmCheck(unittest.TestCase):
             self.assertEqual(para(build()), [])
         self.assertEqual(llmcheck._load(), {})      # failures are not cached
 
+    def test_failed_pair_is_asked_once_per_process(self):
+        # no key or no network: one attempt per distinct pair in a run, not one per view that holds it
+        os.environ["BANKGPT_LLM_CHECK"] = "1"
+        with mock.patch.object(llmcheck, "_ask", return_value=None) as ask:
+            for _ in range(3):
+                self.assertIsNone(llmcheck.judge("s", "q", "r"))
+            self.assertEqual(ask.call_count, 1)
+        llmcheck._cache = None                       # a new process tries again
+        with mock.patch.object(llmcheck, "_ask", return_value=None) as ask:
+            llmcheck.judge("s", "q", "r")
+            self.assertEqual(ask.call_count, 1)
+
     def test_resolved_pairs_never_reach_the_judge(self):
         os.environ["BANKGPT_LLM_CHECK"] = "1"
         strong = "# Savings\n\nThe Summit Reserve Money Market account earns 3.66% APY with at least $30,000.\n"
