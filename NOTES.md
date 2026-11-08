@@ -40,8 +40,9 @@ mirrored changes merged), plus dated text facts (branch counts in press-release 
 recognitions). The resolution is the value the answer path gives today.
 
 **Answer (p95 ≈ 0.05 s).**
-1. Pick the view: `as_of=None` → the latest snapshot; `as_of=D` → the newest snapshot taken on or before D. An
-   "as of May 2026" phrase in the question text works too.
+1. Pick the view: `as_of=None` → the latest snapshot; `as_of=D` → the view in force on D (the newest crawl or
+   interval view dated on or before D, see "Validity intervals" below). An "as of May 2026" phrase in the
+   question text works too.
 2. Detect intent: rate, fee, hours, count, link, list, address, superlative, descriptive.
 3. Rank with BM25 × authority × recency × qualifier fit: the term, amount and model year asked for must match the
    row's tier, a qualifier the question didn't ask for (jumbo, business, IRA, intro, refinance…) is penalised, and
@@ -86,6 +87,33 @@ Unit-tested in `tests/test_currency_rules.py` (decision D3).
    balance or loan-amount tier, personal vs business, model year, purchase vs refinance.
 7. **When the site doesn't say, say so.** No guessing across terms or tiers. "It isn't listed; please contact
    us" with no numbers.
+
+## Validity intervals (v2)
+
+A crawl only says what the site showed on the day it was taken. Pages say more: "Rates are effective as of
+09/25/2026", "offer valid through June 30, 2026". v2 turns both into time-exact intervals.
+
+- **Views.** Every crawl is a view dated on its `taken_on`. Between two crawls A and B, each table of B whose
+  version differs from A and whose stated effective date E falls strictly inside the gap (A < E < B) opens an
+  *interval view* on E: A's content with that table's B version swapped in. An offer visible in A whose end date
+  passes inside the gap opens a view the day after it ends (the offer closes there). `answer(q, as_of=D)` uses the
+  newest view dated on or before D, so an `as_of` between crawls lands on the stated effective date, not on the
+  nearest crawl.
+- **Fact timelines.** Each fact key has versions with `valid_from` / `valid_to` (`Store.timeline(key)`,
+  `Store.facts_at(as_of)`). `valid_from` is the stated effective date when the page gives one and no earlier crawl
+  contradicts it, else the date of the view where the value first appeared. A version closes when a newer value of
+  the same key takes over (`closed_reason` = "replaced by … (effective …)"), when its offer ends ("offer ended
+  …"), or when the fact disappears from the site.
+- **Shadowed values stay stored.** A losing copy (a stale calculator or landing page) is kept as a version with
+  `shadowed=True`, its own interval, and the currency rule that beat it ("shadowed: loses to /rates on newer
+  effective date …"). It is never quoted.
+- **Observation beats a backdated claim.** If B says "effective 05/01" but crawl A, taken 05/12, still showed the
+  old value, the switch stays at B's crawl date: we saw the old value live on a day the new one claims to cover.
+- **Undated changes** switch at the crawl that first shows them (there is no better date to use).
+
+Tested on synthetic pages in `tests/test_intervals.py` (effective date inside a gap, backdated date vs
+observation, undated change, offer ending mid-gap, shadowed copies stored). `docs/eval/dev_eval.jsonl` carries
+`dev-gap-*` items whose `as_of` falls between snapshots, built from snapshot diffs.
 
 ## Embedding it in another Python app (R7)
 
