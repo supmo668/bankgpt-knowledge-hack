@@ -23,6 +23,10 @@ the same run with our own conflicts gold included (all four pillars, the shape o
 | `1b53661` | `conflicts()`: stale pages + cross-snapshot changes + dated text facts | 0.771 | 0.751 |
 | `bf6cdd4` | carry-forward views, label:value facts, expired offers, scale-free refusal | 0.771 | 0.754 |
 | `bbf1e65` | conflict notes, one value per fact on term questions | **0.771** | **0.754** |
+| `52e1fbb` | v2 it. 1: validity intervals (interval views on stated effective dates, fact timelines, trailing views) | 0.771 | 0.747 |
+| `2b145b7` | v2 it. 2: free-text rate facts resolved to table keys, paragraph-vs-table conflicts, value-check answers | 0.840 | 0.814 |
+| `0ed5ee7` | v2 it. 3: optional LLM contradiction check, **flag off** (default) | **0.840** | **0.814** |
+| `0ed5ee7` | v2 it. 3: same, `BANKGPT_LLM_CHECK=1` (no usable key on the runner: 1 pair attempted, no verdict) | 0.840 | 0.814 |
 
 The run on Python 3.11.10 (clean interpreter, no packages) gives the same 0.7705, and so does a fresh clone
 with only the five kit zips dropped into `snapshots_zip/`.
@@ -31,6 +35,37 @@ After the iteration-1 quality gate (`fix:` commits citing findings C-1 … C-24)
 (0.7705, 0 stale-trap hits). Those fixes harden cases the public set doesn't exercise: per-crawl effective dates,
 new model-year tiers, tables inserted above others, ties going to the newest value, model years outside every
 tier, and conflict dedupe. 37 unit tests pass.
+
+## v2 (HACA-14): validity intervals, free-text facts, optional LLM check
+
+Re-scored with the kit's scorer at each iteration close (the last-column numbers use the conflicts gold of that
+commit: 12 entries at `52e1fbb`, 16 from `2b145b7` on). `runs.csv` keeps the submitted v1 row, so the deck
+figures are unchanged until the CTO updates the submission commit.
+
+| Metric | v1 `bbf1e65` | v2 `0ed5ee7`, flag off | v2, flag on |
+|---|---|---|---|
+| Public final (kit scorer) | 0.7705 | **0.8403** | 0.8403 |
+| current_value | 0.33 | **0.67** | 0.67 |
+| conflict_resolution | 0.33 | **0.67** | 0.67 |
+| stale_trap | 0.71 | 0.86 | 0.86 |
+| should_refuse | 3/3 | 3/3 | 3/3 |
+| Lowest category | 0.33 | 0.50 (list_completeness) | 0.50 |
+| Own conflicts gold: recall | 12/12 | **16/16** | 16/16 |
+| Own conflicts gold: precision | 0.375 | **0.381** (42 submitted) | 0.381 |
+| Own conflicts gold: resolution accuracy | 0.92 | 0.94 | 0.94 |
+| Dev suite (37 items, incl. 7 `dev-gap-*` as_of-between-snapshots) | 0.949 | 0.950 (accuracy 1.0) | 0.950 |
+| Blind suite | 0.856 | 0.857 | 0.857 |
+| Answer p95 | 0.04 s | 0.03-0.04 s | 0.03-0.04 s |
+| Ingest, five snapshots | ~7 s | 5.7-6.0 s | 6.7 s |
+| LLM calls | 0 | 0 | 3 attempts on 1 distinct pair, all no verdict (fixed at `0ed5ee7` to 1 per pair) |
+
+Flag on: the runner has no usable `ANTHROPIC_API_KEY`, so the one undecided pair got no verdict and the result is
+the deterministic one, as designed. A run with a key changes at most that one pair's conflict; answers never
+depend on the check.
+
+Gold added in v2: 4 `paragraph_vs_table` cases (cg-13 … cg-16) and 7 `dev-gap-*` as_of items, all built from
+snapshot diffs. The target was 6 paragraph-vs-table cases; the five snapshots hold only these 4 under the rules
+(an Achieve money-market note was dropped as a false positive at the quality gate, see NOTES.md).
 
 ## Per-category scores at `bbf1e65` (public)
 

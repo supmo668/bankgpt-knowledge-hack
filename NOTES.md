@@ -6,8 +6,10 @@
 python harness/run_eval.py --submission submission --eval eval/public_eval.jsonl
 ```
 
-**API keys: none.** v1 is fully deterministic: standard library only, no network, no model calls.
-`requirements.txt` is intentionally empty. It runs on a clean Python 3.11 (checked with 3.11.10) and 3.13.
+**API keys: none by default.** The default run is fully deterministic: standard library only, no network, no
+model calls. `requirements.txt` is intentionally empty. It runs on a clean Python 3.11 (checked with 3.11.10) and
+3.13. The one exception is opt-in: with `BANKGPT_LLM_CHECK=1` the optional LLM contradiction check (below) needs
+`ANTHROPIC_API_KEY` and the `anthropic` package (`pip install anthropic`). Unset, nothing is imported or called.
 
 ## Getting the data (not in this repo)
 
@@ -216,9 +218,32 @@ authority. Public score, conflicts and every existing test are unchanged (0.7705
   Run `python demo/app.py` and open http://127.0.0.1:8765. Standard library only; it binds to localhost.
 - `tests/`: `python -m unittest discover -s tests` (synthetic pages; no snapshot data needed).
 
-## Phase 2 (not in v1)
+## Optional LLM contradiction check (v2, off by default)
+
+`bankgpt/llmcheck.py`. It judges only the free-text pairs the rules above leave undecided: a paragraph value whose
+product the sentence names too weakly for the strict match (one distinctive product word, no stated term) but
+where some table key would match on that one word. For each such (sentence, quoted value, table row) pair it asks
+one question: is the sentence stating this row's fact, and does it give a different value? A "yes, yes" verdict
+adds a paragraph-vs-table conflict, resolved by the same currency rules, with "(matched to this fact by the
+optional LLM check)" in its reason. Pairs the rules decide never reach it, and answers never depend on it.
+
+    BANKGPT_LLM_CHECK=1     turn it on (unset or any other value: off, no import, no call)
+    ANTHROPIC_API_KEY       the credential (only needed for pairs not yet in the cache)
+    BANKGPT_LLM_MODEL       model id (default claude-opus-5-5, low effort)
+    BANKGPT_LLM_CACHE       verdict cache file (default submission/.llm_cache.json, git-ignored)
+
+- **Repeatable.** Verdicts are cached by a sha256 of (prompt version, model, sentence, value, row), so a repeat run
+  gives identical conflicts and answers and needs no network.
+- **Fails closed.** Any failure (package missing, no key, network, refusal, unparseable reply) is "no verdict": the
+  pair stays undecided and the deterministic result stands. A failed pair is tried once per process and is never
+  cached on disk, so a later run with a key judges it.
+- **Size on the kit data.** One distinct undecided pair across the five snapshots, so a flag-on run makes at most
+  one model call. With the flag on and no usable key the scores are identical to the flag-off run (RESULTS.md).
+- Tested with the network function stubbed (`tests/test_llmcheck.py`): off by default, only undecided pairs judged,
+  the disk cache survives a restart, failures are no verdict and asked once per process.
+
+## Not covered yet
 
 An LLM answer-composer for the questions lexical retrieval can't settle (cross-passage synthesis such as "no
-tier pays 0.35%"). The plan: opt-in behind an environment flag, temperature 0, answers cached for consistency,
-and adopted only if it raises the public score without breaking determinism or the 2 s p95. It would need
-`ANTHROPIC_API_KEY`. v1 needs no key.
+tier pays 0.35%") is still not built. It would follow the same pattern: opt-in flag, cached by input hash, adopted
+only if it raises the public score without breaking determinism or the 2 s p95.

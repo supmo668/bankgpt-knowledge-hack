@@ -1,2 +1,3 @@
-# bank-gpt submission v1: standard library only (checked on a clean Python 3.11.10 and on 3.13).
-# No third-party packages and no API keys are needed. See NOTES.md.
+# bank-gpt submission: standard library only (checked on a clean Python 3.11.10 and on 3.13).
+# No third-party packages and no API keys are needed for the default run. See NOTES.md.
+# Optional, only with BANKGPT_LLM_CHECK=1: anthropic (pip install anthropic) and ANTHROPIC_API_KEY.
