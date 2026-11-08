@@ -7,6 +7,7 @@
 // markdown subset the deck uses: h1/h2, paragraphs with bold/italic/code/links, lists, one SVG figure per slide,
 // simple tables and code blocks. Content that doesn't fit its slide fails the build instead of being clipped.
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -25,8 +26,21 @@ const W = 960, H = 540, MX = 48, TOP = 40, BOTTOM = 500, CW = W - 2 * MX;
 const INK = '#0b0b0b', INK2 = '#52514e', MUTED = '#8a8984', ACCENT = '#2a78d6', RULE = '#e4e3df', CODEBG = '#f2f1ee';
 const FOOTER = 'bank-gpt · HACA-8 L2 proof of work';
 
+// Fingerprint of every input (deck.md + figures/*.svg, sorted by name): tests/test_deck.py recomputes it, so a
+// PDF built from an older deck or older figures fails the test, not just one with the wrong page count.
+const FIG_DIR = path.join(DECK_DIR, 'figures');
+const SOURCE_HASH = (() => {
+  const h = crypto.createHash('sha256');
+  h.update(fs.readFileSync(SRC));
+  for (const f of fs.readdirSync(FIG_DIR).filter((n) => n.endsWith('.svg')).sort()) {
+    h.update(`\0${f}\0`);
+    h.update(fs.readFileSync(path.join(FIG_DIR, f)));
+  }
+  return h.digest('hex');
+})();
+
 const doc = new PDFDocument({ size: [W, H], margin: 0, autoFirstPage: false, compress: true,
-  info: { Title: 'bank-gpt: L2 proof of work', Author: 'bank-gpt', Subject: 'Knowledge Hackathon',
+  info: { Title: 'bank-gpt: L2 proof of work', Author: 'bank-gpt', Subject: 'Knowledge Hackathon', Keywords: `source-sha256-${SOURCE_HASH}`,
           CreationDate: new Date(Date.UTC(2026, 10, 8)) } });  // fixed date: rebuilds stay byte-stable
 doc.registerFont('R', path.join(TTF, 'DejaVuSans.ttf'));
 doc.registerFont('B', path.join(TTF, 'DejaVuSans-Bold.ttf'));

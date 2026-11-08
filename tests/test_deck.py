@@ -3,6 +3,7 @@ quotes snapshot page text or the public eval's question or answer text (the repo
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
@@ -30,7 +31,8 @@ def deck_text() -> str:
 
 
 def words(s: str) -> list[str]:
-    return re.findall(r"[a-z0-9$%.]+", s.lower())
+    """Lowercased word tokens; a trailing full stop is punctuation ("2026." is "2026"), an inner one is kept."""
+    return [w for w in (t.rstrip(".") for t in re.findall(r"[a-z0-9$%.]+", s.lower())) if w]
 
 
 def shingles(s: str, n: int = SHINGLE) -> set[tuple[str, ...]]:
@@ -40,6 +42,32 @@ def shingles(s: str, n: int = SHINGLE) -> set[tuple[str, ...]]:
 
 def eval_items(path: Path) -> list[dict]:
     return [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
+
+
+def eval_leaks(deck: str, items: list[dict], n: int = 6) -> list[str]:
+    """Public-eval text the deck quotes. A question or answer of n words or more leaks if it shares an n-word run
+    with the deck; a shorter one (e.g. a bare number or a URL) leaks if the deck contains it as a whole phrase.
+    A must_include / must_not_include value with a digit leaks if it appears verbatim."""
+    deck_sh, deck_w = shingles(deck, n), f" {' '.join(words(deck))} "
+    hits = []
+    for it in items:
+        for field in ("expected_answer", "question"):
+            w = words(it.get(field) or "")
+            if len(w) >= n:
+                if shingles(" ".join(w), n) & deck_sh:
+                    hits.append(f"{it['id']} {field}")
+            elif w and len(" ".join(w)) >= 4 and f" {' '.join(w)} " in deck_w:
+                hits.append(f"{it['id']} {field}")
+        for value in it.get("must_include", []) + it.get("must_not_include", []):
+            if len(value) >= 4 and re.search(r"\d", value) and value.lower() in deck.lower():
+                hits.append(f"{it['id']} value {value!r}")
+    return hits
+
+
+def page_leaks(deck: str, pages: dict[str, str]) -> list[str]:
+    """Snapshot pages that share an 8-word run with the deck."""
+    deck_sh = shingles(deck)
+    return [name for name, page in pages.items() if shingles(page) & deck_sh]
 
 
 class Inputs(unittest.TestCase):
@@ -62,6 +90,12 @@ class Inputs(unittest.TestCase):
     def test_progression_rejects_a_missing_table(self):
         with self.assertRaises(ValueError):
             deck_figures.score_progression("# no table here\n")
+
+    def test_progression_does_not_borrow_the_next_sections_table(self):
+        md = ("## Score per run\n\nTable moved.\n\n## Per-category\n\n| Category | n | Score |\n|---|---|---|\n"
+              "| current_value | 3 | 0.33 |\n")
+        with self.assertRaises(ValueError):
+            deck_figures.score_progression(md)
 
     def test_latest_runs_keeps_the_last_row_per_suite(self):
         rows = [{"utc": "a", "commit": "c1", "suite": "public", "final": "0.1", "accuracy": "0.2", "p95_s": "0.1",
@@ -127,35 +161,74 @@ class Pdf(unittest.TestCase):
         self.assertEqual(len(re.findall(rb"/Type /Page\b", pdf)), len(slides),
                          "deck.pdf is stale: cd scripts/deck && node build_pdf.mjs")
 
+    def test_pdf_was_built_from_the_committed_deck_and_figures(self):
+        """build_pdf.mjs stamps a sha256 of deck.md + figures/*.svg (sorted) into the PDF Keywords."""
+        h = hashlib.sha256((DECK / "deck.md").read_bytes())
+        for f in sorted(p.name for p in (DECK / "figures").glob("*.svg")):
+            h.update(b"\0" + f.encode() + b"\0")
+            h.update((DECK / "figures" / f).read_bytes())
+        self.assertIn(f"(source-sha256-{h.hexdigest()})".encode(), (DECK / "deck.pdf").read_bytes(),
+                      "deck.pdf is stale: cd scripts/deck && node build_pdf.mjs")
+
 
 class NoLeak(unittest.TestCase):
     """The rules forbid redistributing the site; the public eval answers are the organisers'."""
 
     def test_no_public_eval_answer_or_question_text(self):
-        deck, deck_sh = deck_text(), shingles(deck_text())
-        for it in eval_items(ROOT / "eval/public_eval.jsonl"):
-            for field in ("expected_answer", "question"):
-                hit = shingles(it.get(field) or "", 6) & shingles(deck, 6)
-                self.assertFalse(hit, f"{it['id']} {field} quoted in docs/deck: {sorted(hit)[:1]}")
-            for value in it.get("must_include", []) + it.get("must_not_include", []):
-                if len(value) >= 4 and re.search(r"\d", value):
-                    self.assertNotIn(value.lower(), deck, f"{it['id']} site value {value!r} in docs/deck")
-        self.assertTrue(deck_sh)
+        deck = deck_text()
+        self.assertTrue(shingles(deck))
+        self.assertEqual(eval_leaks(deck, eval_items(ROOT / "eval/public_eval.jsonl")), [])
 
     def test_no_snapshot_page_text(self):
         snaps = Path(os.environ.get("BANKGPT_SNAPSHOTS", ROOT / "snapshots"))
         pages = sorted(snaps.glob("*/pages/*.md")) if snaps.is_dir() else []
         if not pages:
             self.skipTest("snapshots not unpacked (gitignored); run the eval once to check page text")
-        deck_sh = shingles(deck_text())
-        for p in pages:
-            hit = shingles(p.read_text(encoding="utf-8", errors="ignore")) & deck_sh
-            self.assertFalse(hit, f"{p.parent.parent.name}/{p.name} text in docs/deck: {sorted(hit)[:1]}")
+        texts = {f"{p.parent.parent.name}/{p.name}": p.read_text(encoding="utf-8", errors="ignore") for p in pages}
+        self.assertEqual(page_leaks(deck_text(), texts), [])
 
-    def test_the_leak_check_catches_a_quote(self):
-        it = eval_items(ROOT / "eval/public_eval.jsonl")[0]
-        self.assertTrue(shingles(it["expected_answer"], 6) & shingles("intro " + it["expected_answer"], 6))
 
+class LeakCheckCatches(unittest.TestCase):
+    """Positive controls: the same functions the NoLeak tests call must flag a planted quote."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.items = eval_items(ROOT / "eval/public_eval.jsonl")
+        cls.deck = deck_text()
+
+    def planted(self, quote: str) -> str:
+        return self.deck + "\nas the slide says, " + quote + " and so on.\n"
+
+    def test_a_long_answer(self):
+        it = max(self.items, key=lambda i: len(words(i["expected_answer"])))
+        self.assertIn(f"{it['id']} expected_answer", eval_leaks(self.planted(it["expected_answer"]), self.items))
+
+    def test_a_partial_long_answer(self):
+        it = max(self.items, key=lambda i: len(words(i["expected_answer"])))
+        part = " ".join(words(it["expected_answer"])[3:9])
+        self.assertIn(f"{it['id']} expected_answer", eval_leaks(self.planted(part), self.items))
+
+    def test_every_short_answer(self):
+        short = [i for i in self.items if 0 < len(words(i["expected_answer"])) < 6
+                 and len(" ".join(words(i["expected_answer"]))) >= 4]
+        self.assertTrue(short, "the public set has short answers; this control must exercise them")
+        for it in short:
+            self.assertIn(f"{it['id']} expected_answer", eval_leaks(self.planted(it["expected_answer"].upper()),
+                                                                    self.items), it["id"])
+
+    def test_a_question(self):
+        it = self.items[0]
+        self.assertIn(f"{it['id']} question", eval_leaks(self.planted(it["question"]), self.items))
+
+    def test_a_site_value(self):
+        it = next(i for i in self.items if any(re.search(r"\d", v) and len(v) >= 4 for v in i["must_include"]))
+        value = next(v for v in it["must_include"] if re.search(r"\d", v) and len(v) >= 4)
+        self.assertIn(f"{it['id']} value {value!r}", eval_leaks(self.planted(f"at {value} today"), self.items))
+
+    def test_snapshot_page_text(self):
+        page = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo"
+        self.assertEqual(page_leaks(self.planted(" ".join(page.split()[1:10])), {"x/p.md": page}), ["x/p.md"])
+        self.assertEqual(page_leaks(self.planted(" ".join(page.split()[:7])), {"x/p.md": page}), [])
 
 if __name__ == "__main__":
     unittest.main()
