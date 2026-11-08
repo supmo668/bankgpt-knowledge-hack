@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "harness"))
 sys.path.insert(0, str(ROOT / "submission"))
 
 from run_eval import load_snapshots, to_answer  # noqa: E402
-from scoring import score_conflicts, score_item, summarize  # noqa: E402
+from scoring import REFUSAL_RE, score_conflicts, score_item, summarize  # noqa: E402
 
 import solution  # noqa: E402
 
@@ -36,20 +36,54 @@ SUITES = [
 ]
 
 
+def diagnostics(items: list[dict], answers: list, results: list[dict]) -> dict:
+    """Two refusal diagnostics (no threshold; they are not part of the score).
+
+    "Refused" uses the scorer's own test: confident=False, or refusal wording in the text.
+
+    unsupported_confident = confident answers the evidence does not support / all confident answers on gradable
+      items. A confident answer is unsupported when it hits none of `must_include` or hits a `must_not_include`
+      trap (scorer correctness 0), or when the item is `should_refuse`. Items that are neither `should_refuse`
+      nor carry `must_include` cannot be graded and are left out of both counts. Undefined (None) when there
+      are no confident answers.
+    wrongly_refused = refusals / all answerable items (every item that is not `should_refuse`).
+    """
+    uc_num = uc_den = wr_num = wr_den = 0
+    for it, ans, r in zip(items, answers, results):
+        refused = (not ans.confident) or bool(REFUSAL_RE.search(ans.text or ""))
+        should_refuse = it.get("category") == "should_refuse"
+        if not should_refuse:
+            wr_den += 1
+            wr_num += refused
+        if refused or not (should_refuse or it.get("must_include")):
+            continue
+        uc_den += 1
+        uc_num += should_refuse or r["correctness"] == 0
+    return {"unsupported_confident": {"num": uc_num, "den": uc_den,
+                                      "rate": round(uc_num / uc_den, 4) if uc_den else None},
+            "wrongly_refused": {"num": wr_num, "den": wr_den, "rate": round(wr_num / wr_den, 4) if wr_den else None}}
+
+
+def fmt_rate(d: dict) -> str:
+    return f"{d['rate']:.3f} ({d['num']}/{d['den']})" if d["rate"] is not None else f"undefined ({d['num']}/{d['den']})"
+
+
 def run_suite(ks, eval_path: Path, gold_path: Path, repeat_sample: int = 20) -> dict:
     items = [json.loads(x) for x in eval_path.read_text().splitlines() if x.strip()]
-    results = []
+    results, answers = [], []
     for it in items:
         t = time.time()
         ans = to_answer(ks.answer(it["question"], it.get("as_of")))
         r = score_item(it, ans)
         r.update(latency_s=round(time.time() - t, 3), error=None, answer={"text": ans.text})
         results.append(r)
+        answers.append(ans)
     repeats = [{"id": it["id"], "text": to_answer(ks.answer(it["question"], it.get("as_of"))).text}
                for it in items[:: max(1, len(items) // repeat_sample)]]
     conf = score_conflicts(json.loads(gold_path.read_text()), ks.conflicts()) if gold_path.exists() else None
     rep = summarize(results, conf, repeats)
     rep["n_conflicts_submitted"] = len(ks.conflicts())
+    rep["diagnostics"] = diagnostics(items, answers, results)
     return rep
 
 
@@ -91,6 +125,14 @@ def main() -> None:
         lines.append(f"| {name} | {r['questions']} | **{r['final_score']:.3f}** | {r['qa_score']:.3f} | "
                      f"{r['consistency']['score']} | {r['speed']['p95_s']} | {c.get('f1', '-')} | "
                      f"{c.get('resolution_accuracy', '-')} | {r['stale_trap_hits']} | {r['ingest_seconds']} |")
+    lines += ["\n## Diagnostics (no threshold, not part of the score)\n",
+              "Unsupported-confident rate = confident answers that hit no required fact, hit a trap, or should have "
+              "been refused / confident answers on gradable items; undefined when there are none. "
+              "Wrongly-refused rate = refusals / answerable (non-`should_refuse`) items.\n",
+              "| Suite | Unsupported-confident rate | Wrongly-refused rate (answerable) |", "|---|---|---|"]
+    for name, r in reports.items():
+        d = r["diagnostics"]
+        lines.append(f"| {name} | {fmt_rate(d['unsupported_confident'])} | {fmt_rate(d['wrongly_refused'])} |")
     for name, r in reports.items():
         lines += [f"\n## {name}: per category\n", "| Category | n | Score |", "|---|---|---|"]
         lines += [f"| {k} | {v['n']} | {v['score']:.2f} |" for k, v in r["by_category"].items()]
