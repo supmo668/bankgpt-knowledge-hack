@@ -110,6 +110,13 @@ A crawl only says what the site showed on the day it was taken. Pages say more: 
 - **Observation beats a backdated claim.** If B says "effective 05/01" but crawl A, taken 05/12, still showed the
   old value, the switch stays at B's crawl date: we saw the old value live on a day the new one claims to cover.
 - **Undated changes** switch at the crawl that first shows them (there is no better date to use).
+- **After the newest crawl**, an offer it still shows stops being quoted the day after its stated end date
+  (a *trailing view*); while it runs, its version carries that scheduled end ("offer ends …, stated end date").
+- **Before the first crawl**, `answer` falls back to the first crawl (so a question about an earlier date still
+  gets the oldest known value), while `facts_at` is exact and returns only facts whose interval has begun.
+- **Conflicts come from observed crawls only.** Interval and trailing views are inferred states, so they shape
+  answers and timelines but never add entries to `conflicts()`.
+- Snapshots are expected in date order, as the harness delivers them (`run_eval.py` sorts by `taken_on`).
 
 Tested on synthetic pages in `tests/test_intervals.py` (effective date inside a gap, backdated date vs
 observation, undated change, offer ending mid-gap, shadowed copies stored). `docs/eval/dev_eval.jsonl` carries
