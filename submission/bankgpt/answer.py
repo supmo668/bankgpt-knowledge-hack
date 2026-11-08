@@ -8,7 +8,7 @@ from datetime import date
 from typing import Optional
 
 from .chunker import Chunk
-from .store import Store, row_key
+from .store import Store, row_key, row_values
 from .text import (amount_range, expand_query, money_values, numwords_to_digits, stem, term_patterns, tokens,
                    year_range)
 
@@ -50,11 +50,20 @@ AWARD_RE = re.compile(r"(?i)\b(recogni(?:[sz]|tion)\w*|awards?|awarded|rank(?:ed
 ORDINAL_TIME_RE = re.compile(r"(?i)\b(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th))"
                              r" (?:consecutive )?(?:time|year)\b")
 # a sentence that refers back to the entity of the sentence before it ("This initiative provides up to $15,000")
-ANAPHOR_RE = re.compile(r"^(?:This|The|These|It|Its)\b(?:\s+(?:new\s+)?(?:initiative|program|programme|offer|grant|"
-                        r"loan|account|card|benefit|service|fund|product|partnership))?\b")
-# a yes/no check of a stated value ("Do any savings tiers pay 0.35% APY?", "Is there a certificate at 5%?")
+ANAPHOR_RE = re.compile(r"^(?:This|These|The)\s+(?:new\s+)?(?:initiative|program|programme|offer|grant|loan|account|"
+                        r"card|benefit|service|fund|product|partnership|award|recognition)s?\b")
+# a yes/no check of a stated value ("Does any club account earn 1.25% APY?", "Is there a certificate at 5%?")
 VERIFY_RE = re.compile(r"(?i)^\s*(?:do|does|is|are) (?:any|there|dupaco|you)\b.*\b(?:pay|earn|offer|yield|get|at)\b[^?]*"
                        r"\d(?:\.\d+)?\s?%")
+COMPARE_RE = re.compile(r"(?i)\b(?:more|less|higher|lower|greater|fewer) than\b|\bat (?:least|most)\b|\b(?:above|below|over|"
+                        r"under|up to|exceed\w*|or (?:more|less|higher|lower))\b")
+
+
+def _verify(q: str) -> bool:
+    """A yes/no check of one stated value (short questions only: the pattern backtracks on long input)."""
+    return len(q) <= 300 and bool(VERIFY_RE.search(q))
+
+
 HISTORY_RE = re.compile(r"\b(expired|ended|past|previous|former|used to|old)\b", re.I)
 PROCEDURE_RE = re.compile(r"\bhow (do|can|would) i\b|\bwhere (do|can) i\b|\bonline\b", re.I)
 COUNT_INTENT_RE = re.compile(r"\bhow many\b", re.I)
@@ -104,6 +113,25 @@ class Intent:
     org: Optional[str] = None      # a recognition question names the organisation that gave it
 
 
+_NOT_ORG = frozenset("I Dupaco Credit Union Community What Which Who When How Has Have Is Are Does Did Do Can The A An "
+                    "Visa Mastercard".split())
+
+
+def _award_org(q: str) -> Optional[str]:
+    """The organisation a recognition question names: a known ranking body, else a capitalised name that is not
+    the institution itself or a question word ("Which honors has Kiplinger given Dupaco?" -> "Kiplinger")."""
+    if not AWARD_RE.search(q):
+        return None
+    m = ORG_RE.search(q)
+    if m:
+        return m.group(1)
+    for name in re.findall(r"\b([A-Z][\w&.'-]+(?:\s+[A-Z][\w&.'-]+)*)", q):
+        words = [w for w in name.split() if w not in _NOT_ORG]
+        if words:
+            return " ".join(words)
+    return None
+
+
 def intent_of(q: str) -> Intent:
     m = re.search(r"\bhow many (\w+)(?: (\w+))?", q, re.I)
     noun = None
@@ -120,7 +148,7 @@ def intent_of(q: str) -> Intent:
         listing=bool(LIST_INTENT_RE.search(q)),
         hi=bool(SUPER_HI_RE.search(q)),
         lo=bool(SUPER_LO_RE.search(q)),
-        org=(o.group(1) if (o := ORG_RE.search(q)) and AWARD_RE.search(q) else None),
+        org=_award_org(q),
     )
 
 
@@ -204,8 +232,8 @@ class Answerer:
     def rank(self, question: str, si: int, it: Intent, limit: int = 80) -> list[tuple[float, int]]:
         s = self.s
         qx = expand_query(_strip_dates(question))
-        if VERIFY_RE.search(question):
-            # "Do any savings tiers pay 0.35% APY?": the value is what to check, not what to look up
+        if _verify(question):
+            # "Does any club account earn 1.25% APY?": the value is what to check, not what to look up
             qx = re.sub(r"\d+(?:\.\d+)?\s?%", " ", qx)
         qtoks = tokens(qx)
         qset = set(qtoks)
@@ -348,11 +376,9 @@ class Answerer:
         sc, cid = best
         text, used = self._compose(question, it, cid, sc, ranked, si)
         text = self._titled(text, cid)
-        vm = VERIFY_RE.search(question) and re.search(r"(\d+(?:\.\d+)?)\s?%", question)
-        if vm and s.chunks[cid].kind == "row":
-            v = float(vm.group(1))
-            shown = {float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s?%", text)}
-            text = (f"Yes: {v:g}% is listed. " if v in shown else f"No: none of these pays {v:g}%. ") + text
+        lead = self._verify_lead(question, cid, si)
+        if lead:
+            text = f"{lead} {text}"
         if PROCEDURE_RE.search(question):
             link = self._action_link(question, cid, si)
             if link and link not in text:
@@ -419,7 +445,7 @@ class Answerer:
             if not info.pub_date:
                 continue
             # a statement about the recognition (its own release, or "the Nth time") outranks a passing mention
-            # in boilerplate ("It is a Forbes Best-in-State Credit Union ...")
+            # in boilerplate ("It is a Newsweek best regional credit union ...")
             ordinal = bool(ORDINAL_TIME_RE.search(c.text))
             pool.append((org in info.title or ordinal, info.pub_date, ordinal, sc, cid))
         if not pool:
@@ -427,15 +453,38 @@ class Answerer:
         *_, sc, cid = max(pool, key=lambda t: t[:4])
         return (sc, cid)
 
-    def _continuation(self, cid: int) -> Optional[str]:
-        """The sentence right after chunk `cid` in its paragraph when it refers back to it (entity resolution in
-        free text: "This initiative ..." is about the program the sentence before named)."""
+    def _verify_lead(self, question: str, cid: int, si: int) -> Optional[str]:
+        """"Yes" / "No" for a question that checks one stated value against a product's table ("Do any of the
+        club savings tiers earn 1.25% APY?"). Only the column asked is compared, over every tier of the table, and a
+        value inside a stated range counts. Comparisons ("at least", "more than") get no lead."""
+        s = self.s
+        c = s.chunks[cid]
+        vm = re.search(r"(\d+(?:\.\d+)?)\s?%\s*(APY|APR|dividend|rate)?", question, re.I)
+        if not (_verify(question) and vm) or COMPARE_RE.search(question) or c.kind != "row" or not c.table:
+            return None
+        v = float(vm.group(1))
+        unit = (vm.group(2) or "").lower()
+        col = "apy" if unit == "apy" else "apr" if unit == "apr" else "div" if unit == "dividend" else None
+        vals = []
+        for r in s.rows_of(c.table, si):
+            for k, nums in row_values(s.chunks[r]):
+                if col is None or k.split("-")[0] == col:
+                    vals.append(nums)
+        if not vals:
+            return None
+        hit = any(v in nums or (len(nums) == 2 and nums[0] <= v <= nums[1]) for nums in vals)
+        return f"Yes: {v:g}% is listed." if hit else f"No: none of these tiers pays {v:g}%."
+
+    def _continuation(self, cid: int, si: int) -> Optional[str]:
+        """The sentence right after chunk `cid` in its paragraph (as shown in view `si`) when it refers back to it
+        (entity resolution in free text: "This grant ..." is about the program the sentence before named)."""
         s = self.s
         c = s.chunks[cid]
         tail = c.text.strip()[-80:]
+        bit = 1 << si
         for pid in s.url_chunks.get(c.url, []):
             p = s.chunks[pid]
-            if p.kind != "para" or pid == cid or tail not in p.text:
+            if p.kind != "para" or pid == cid or tail not in p.text or not s.chunk_view[pid] & bit:
                 continue
             after = p.text[p.text.index(tail) + len(tail):].strip()
             nxt = re.split(r"(?<=[.!?])\s+(?=[A-Z“\"])", after, maxsplit=1)[0] if after else ""
@@ -584,7 +633,7 @@ class Answerer:
                 break
             # each quoted passage brings the sentence that refers back to it, so the facts stay with their entity
             for u in list(used):
-                nxt = self._continuation(u)
+                nxt = self._continuation(u, si)
                 if nxt and nxt not in txt:
                     txt = f"{txt} {nxt}"
         return txt, used
