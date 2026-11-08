@@ -32,6 +32,7 @@ SYSTEM = ("You check a bank website for self-contradictions. You get one sentenc
           '{"same_fact": true|false, "contradicts": true|false}.')
 
 _cache: Optional[dict] = None
+_failed: set = set()   # pairs that got no verdict in this process: not retried until the next run
 calls = 0          # live API calls made in this process (tests and the eval report read it)
 
 
@@ -46,6 +47,7 @@ def _cache_path() -> Path:
 def _load() -> dict:
     global _cache
     if _cache is None:
+        _failed.clear()      # a fresh load is a fresh run: earlier failures may succeed now
         try:
             _cache = json.loads(_cache_path().read_text())
         except (OSError, ValueError):
@@ -109,8 +111,12 @@ def judge(sentence: str, quote: str, row: str) -> Optional[dict]:
     cache = _load()
     if key in cache:
         return cache[key]
+    if key in _failed:
+        return None
     v = _ask(model, sentence, quote, row)
-    if v is not None:          # only real verdicts are cached; a failure is retried on the next run
+    if v is None:              # only real verdicts are cached on disk; a failure is retried on the next run
+        _failed.add(key)
+    else:
         cache[key] = v
         _save()
     return v
