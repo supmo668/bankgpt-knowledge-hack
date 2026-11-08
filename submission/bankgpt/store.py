@@ -6,6 +6,7 @@ appeared in, so `as_of` selection is a bit test and a newer snapshot never overw
 from __future__ import annotations
 
 import math
+import re
 from collections import defaultdict
 from datetime import date
 from typing import Optional
@@ -13,7 +14,70 @@ from typing import Optional
 from .chunker import Chunk, PageInfo, chunk_page, page_info
 from .text import tokens
 
+VALUE_CELL_RE = re.compile(r"\d(?:\.\d+)?\s?%|\$\s?\d|^\s*[\d.,]+\s*$")
+NUM_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def _eff_date(s: Optional[str]) -> date:
+    if not s:
+        return date.min
+    try:
+        m, d, y = (int(x) for x in s.split("/"))
+        return date(y + 2000 if y < 100 else y, m, d)
+    except ValueError:
+        return date.min
+
+
+def row_key(c: Chunk) -> Optional[str]:
+    """Fact key of a table row = its qualifier cells (term, tier, product), not its values."""
+    if c.kind != "row" or not c.cells:
+        return None
+    quals = [v for k, v in c.cells.items() if not VALUE_CELL_RE.search(v) or re.search(r"(?i)month|year|tier|\+|or less|–|-", v)
+             and not re.search(r"%", v)]
+    if not quals:
+        return None
+    q = " | ".join(quals).lower()
+    q = re.sub(r"[\s,]+", " ", q.replace("–", "-")).strip()
+    if len(re.findall(r"[a-z]{3,}", q)) < 3:
+        q = (c.ctx.split(" > ")[-1].lower() + " | " + q) if c.ctx else q
+    scope = "business" if "business" in c.url.lower() else "personal"
+    return f"{scope} | {q}"
+
+
+def _canon_col(header: str, cell: str) -> str:
+    h, v = header.lower(), cell.lower()
+    if "apr" in v or "apr" in h or "annual percentage rate" in h:
+        col = "apr"
+    elif "apy" in v or "apy" in h or "yield" in h:
+        col = "apy"
+    elif "dividend" in h:
+        col = "div"
+    else:
+        col = "rate"
+    if re.search(r"1st|first|intro|promo", h):
+        col += "-intro"
+    return col
+
+
+def row_values(c: Chunk) -> tuple:
+    """Value cells as (canonical column, numbers), so 6.000% == 6.00% and APR == Annual Percentage Rate."""
+    vals = []
+    for k, v in c.cells.items():
+        if "%" not in v or re.search(r"(?i)payment|min", k):
+            continue
+        nums = tuple(round(float(x.replace(",", "")), 4) for x in NUM_RE.findall(v))
+        if nums:
+            vals.append((_canon_col(k, v), nums))
+    return tuple(sorted(vals))
+
+
 K1, B = 1.2, 0.5
+
+
+def values_disagree(a: tuple, b: tuple) -> bool:
+    da, db = dict(a), dict(b)
+    shared = set(da) & set(db)
+    return any(da[k] != db[k] for k in shared)
 
 
 class Store:
@@ -30,6 +94,8 @@ class Store:
         self.postings: dict[str, list[int]] = defaultdict(list)
         self.table_rows: dict[str, list[int]] = defaultdict(list)
         self._idf: dict[str, float] = {}
+        self.shadowed: dict[int, set] = {}                   # snapshot -> row chunks that lost their fact
+        self.fact_groups: dict[int, dict] = {}               # snapshot -> fact key -> [cid]
         self._avglen = 1.0
 
     # ------------------------------------------------------------------ ingest
@@ -61,8 +127,33 @@ class Store:
                     if c.table:
                         self.table_rows[c.table].append(cid)
                 self.chunk_mask[cid] |= bit
+        self._resolve_facts(si)
         self._finalize()
         return si
+
+    def claim(self, cid: int, si: int) -> tuple:
+        """How strongly a row claims to be current: effective date, then authority, then recency."""
+        c = self.chunks[cid]
+        info = self.pages[c.url]
+        return (_eff_date(c.effective), info.authority, info.pub_date or date.max, -cid)
+
+    def _resolve_facts(self, si: int) -> None:
+        bit = 1 << si
+        groups: dict[str, list[int]] = defaultdict(list)
+        for cid, c in enumerate(self.chunks):
+            if c.kind == "row" and self.chunk_mask[cid] & bit:
+                k = row_key(c)
+                if k and row_values(c):
+                    groups[k].append(cid)
+        shadow = set()
+        for k, cids in groups.items():
+            if len({row_values(self.chunks[x]) for x in cids}) < 2:
+                continue
+            win = max(cids, key=lambda x: self.claim(x, si))
+            wv = row_values(self.chunks[win])
+            shadow.update(x for x in cids if values_disagree(row_values(self.chunks[x]), wv))
+        self.shadowed[si] = shadow
+        self.fact_groups[si] = dict(groups)
 
     def _finalize(self) -> None:
         n = len(self.chunks) or 1
@@ -103,7 +194,8 @@ class Store:
 
     def rows_of(self, table: str, si: int) -> list[int]:
         bit = 1 << si
-        return [cid for cid in self.table_rows.get(table, []) if self.chunk_mask[cid] & bit]
+        sh = self.shadowed.get(si, set())
+        return [cid for cid in self.table_rows.get(table, []) if self.chunk_mask[cid] & bit and cid not in sh]
 
     def recency(self, info: PageInfo, ref: date) -> float:
         """1.0 for undated live pages; dated pages decay over ~6 years before the snapshot date."""

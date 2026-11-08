@@ -149,7 +149,10 @@ class Answerer:
         ents = _entities(question)
         top = sorted(raw.items(), key=lambda kv: -kv[1])[:500]
         out = []
+        shadow = s.shadowed.get(si, set())
         for cid, sc in top:
+            if cid in shadow:
+                continue   # a stale copy of a fact whose current value lives elsewhere
             c = s.chunks[cid]
             info = s.pages[c.url]
             f = info.authority ** 0.8 * (0.8 + 0.4 * s.recency(info, ref))
