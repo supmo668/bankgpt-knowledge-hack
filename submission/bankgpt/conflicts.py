@@ -34,6 +34,7 @@ class ConflictRec:
     resolution: Optional[str] = None
     reason: Optional[str] = None
     priority: int = 0
+    fact: str = ""          # product-agnostic fact label: business / IRA mirrors of one change share it
 
 
 def _fmt_values(v: tuple) -> str:
@@ -44,6 +45,13 @@ def _fmt_values(v: tuple) -> str:
         label = COL_LABEL.get(base, base) + (" (intro)" if col.endswith("-intro") else "")
         parts.append(" – ".join(f"{n:g}%" for n in nums) + f" {label}")
     return " / ".join(parts)
+
+
+def _mirror_key(label: str) -> str:
+    """'Roth: 10 Month Fixed Special' and '10 Month Fixed Certificate Special' -> '10 month fixed special'."""
+    words = re.findall(r"[a-z0-9$.,+-]+", label.lower())
+    return " ".join(w for w in words if w not in ("roth:", "roth", "traditional:", "traditional", "business", "ira",
+                                                    "certificate", "certificates", "account"))
 
 
 def _path(url: str) -> str:
@@ -63,7 +71,7 @@ class ConflictFinder:
         # is one contradiction, not several
         seen, uniq = set(), []
         for c in out:
-            sig = (frozenset(c.values), c.resolution)
+            sig = (frozenset(c.values), c.resolution, c.fact or c.topic)
             if sig in seen:
                 continue
             seen.add(sig)
@@ -129,7 +137,7 @@ class ConflictFinder:
                       f"{s.snapshots[last_si][0]} is authoritative and newest; " + "; ".join(reasons))
             values = [_fmt_values(v) for v, _, _ in losers] + [_fmt_values(wv)]
             out.append(ConflictRec(topic=topic, values=values, sources=sources, resolution=_fmt_values(wv),
-                                   reason=reason, priority=2 if same_snap_stale else 1))
+                                   reason=reason, priority=2 if same_snap_stale else 1, fact=_mirror_key(label)))
         return out
 
     # ------------------------------------------------------------------ text facts
