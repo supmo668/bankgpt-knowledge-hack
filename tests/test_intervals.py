@@ -242,5 +242,38 @@ class ShadowedCopyGoneAndBack(unittest.TestCase):
         self.assertEqual(sh, [("2026-05-12", "2026-06-09"), ("2026-08-27", None)])
 
 
+class CoverageEdges(unittest.TestCase):
+    def test_two_tables_two_dates_in_one_gap(self):
+        mm = "\n\nMoney Market\n\n| Balance Tier | APY |\n| --- | --- |\n| $0 - $2,499.99 | {v} |\n\nRates are effective as of {e}.\n"
+        ks = solution.build()
+        ks.ingest(snap("01", "2026-05-12", {"/rates": RATES.format(v="2.90%", e="05/01/2026") + mm.format(v="0.10%", e="05/01/2026")}))
+        ks.ingest(snap("02", "2026-08-27", {"/rates": RATES.format(v="3.40%", e="06/02/2026") + mm.format(v="0.20%", e="07/15/2026")}))
+        dates = [v.date for v in ks.store.views]
+        self.assertIn("2026-06-02", dates)
+        self.assertIn("2026-07-15", dates)
+        qm = "What is the money market APY for a balance of $1,000?"
+        self.assertIn("0.10%", ks.answer(qm, as_of="2026-07-14").text)
+        self.assertIn("0.20%", ks.answer(qm, as_of="2026-07-15").text)
+        self.assertIn("3.40%", ks.answer(Q, as_of="2026-07-14").text)
+
+    def test_same_date_snapshots_later_ingest_wins(self):
+        ks = solution.build()
+        ks.ingest(snap("01", "2026-05-12", {"/rates": RATES.format(v="2.90%", e="05/01/2026")}))
+        ks.ingest(snap("02", "2026-05-12", {"/rates": RATES.format(v="3.40%", e="05/01/2026")}))
+        for d in ("2026-05-12", None):
+            a = ks.answer(Q, as_of=d)
+            self.assertIn("3.40%", a.text)
+            self.assertEqual(a.sources[0].snapshot_id, "02")
+
+    def test_facts_at_never_returns_a_shadowed_copy(self):
+        stale = ("# Calculator\n\nRegular\n\n| Certificate | APY |\n| --- | --- |\n| 12 Month | 2.50% |\n")
+        ks = solution.build()
+        ks.ingest(snap("01", "2026-05-12", {"/rates": RATES.format(v="2.90%", e="05/01/2026"),
+                                            "/calculators/savings": stale}))
+        f = ks.store.facts_at(None)[key_of(ks)]
+        self.assertFalse(f.shadowed)
+        self.assertTrue(f.url.endswith("/rates"))
+
+
 if __name__ == "__main__":
     unittest.main()
