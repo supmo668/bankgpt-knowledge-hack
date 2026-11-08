@@ -1,0 +1,17 @@
+event: iteration-complete
+workstream: haca-5
+issue: HACA-5
+iteration: "1.1"
+branch: feat/haca-5-knowledge-solution
+commit_hash: 4b7ca05
+qgr_receipt: workstreams/haca-5/qgr/bankgpt-knowledge-hack-supmo668-worktree-agent-haca-5-bankgpt-knowledge-hack-qgr-iteration-complete-20261108-0518-81f6dc5.md
+summary: >
+  Knowledge Hackathon solution v1 (deterministic, stdlib, no keys). Public eval 0.7705 (baseline 0.093),
+  no category at 0, should_refuse 3/3, 0 stale-trap hits, p95 0.04-0.06 s. Fresh GitHub clone + kit zips on
+  clean py3.11.10 -> 0.7705. Data never committed (verified over history). QG: 26 findings, 14 kept, all fixed
+  with per-finding commits; 37 unit tests. Proof of work in docs/eval/RESULTS.md, demo/app.py.
+notes:
+  - agency.yaml quality.test_command/lint_command set on this branch (gate STOPs when unset) - CTO keep/move.
+  - Currency order effective-date before authority (NOTES rule 2) vs a strict reading of PVR R3 - flag if R3 must win.
+next_handoff: cto /pr-cto-land
+emitted_at: 2026-11-08T05:25:00Z
