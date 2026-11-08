@@ -60,6 +60,29 @@ class Diagnostics(unittest.TestCase):
         self.assertEqual(eval_report.fmt_rate(d["unsupported_confident"]), "undefined (0/0)")
         self.assertEqual(d["wrongly_refused"]["rate"], 1.0)
 
+    def test_defined_rate_format(self):   # T-10
+        self.assertEqual(eval_report.fmt_rate({"num": 3, "den": 4, "rate": 0.75}), "0.750 (3/4)")
+
+    def test_run_suite_reports_diagnostics(self):   # T-10: wired into every suite report
+        import json
+        import tempfile
+
+        class Stub:
+            def answer(self, q, as_of=None):
+                return REFUSAL if "refuse" in q else Answer(text="3.50% APY")
+
+            def conflicts(self):
+                return []
+
+        items = [dict(item(1), question="What is the APY?"), dict(item(2), question="please refuse this"),
+                 dict(item(3, cat="should_refuse", must=()), question="refuse me")]
+        with tempfile.TemporaryDirectory() as tmp:
+            ev = Path(tmp) / "eval.jsonl"
+            ev.write_text("\n".join(json.dumps(i) for i in items))
+            rep = eval_report.run_suite(Stub(), ev, Path(tmp) / "no_gold.json")
+        self.assertEqual(rep["diagnostics"]["wrongly_refused"], {"num": 1, "den": 2, "rate": 0.5})
+        self.assertEqual(rep["diagnostics"]["unsupported_confident"], {"num": 0, "den": 1, "rate": 0.0})
+
     def test_undefined_without_answerable_items(self):
         d = run([(item(1, cat="should_refuse", must=()), REFUSAL)])
         self.assertIsNone(d["wrongly_refused"]["rate"])
